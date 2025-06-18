@@ -17,6 +17,7 @@ import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { saveToken } from '@/utils/token';
 
 export default function AuthScreen() {
   const [email, setEmail] = useState('');
@@ -25,43 +26,56 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleAuth = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
+ const handleAuth = async () => {
+  if (!email || !password) {
+    Alert.alert('Error', 'Please fill in all fields');
+    return;
+  }
+
+  if (!email.includes('@')) {
+    Alert.alert('Error', 'Please enter a valid email address');
+    return;
+  }
+
+  if (password.length < 6) {
+    Alert.alert('Error', 'Password must be at least 6 characters');
+    return;
+  }
+
+  setLoading(true);
+
+  const endpoint = isLogin
+    ? 'http://localhost:3001/api/auth/login'
+    : 'http://localhost:3001/api/auth/register';
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.error || 'Authentication failed');
     }
 
-    if (!email.includes('@')) {
-      Alert.alert('Error', 'Please enter a valid email address');
-      return;
-    }
+    console.log('Success:', data);
+    await saveToken(data.token);
 
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
-      return;
-    }
+    // Redirect to typing speed page instead of tabs
+    router.replace('/typing-game');
+  } catch (error: any) {
+    console.error(error);
+    Alert.alert('Error', error.message || 'Something went wrong');
+  } finally {
+    setLoading(false);
+  }
+};
 
-    setLoading(true);
-    
-    try {
-      // Simulate authentication API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      if (isLogin) {
-        console.log('Logging in:', { email, password });
-      } else {
-        console.log('Registering:', { email, password });
-      }
-      
-      // Navigate to main app after successful auth
-      router.replace('/(tabs)');
-      
-    } catch (error) {
-      Alert.alert('Error', 'Authentication failed. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <KeyboardAvoidingView 
