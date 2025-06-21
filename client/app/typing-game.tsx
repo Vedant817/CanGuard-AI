@@ -41,6 +41,13 @@ interface TypingStats {
   correctKeystrokes: number;
   averageSpeed: number;
   consistency: number;
+  // ✅ Enhanced behavioral metrics
+  typingSpeed: number; // Characters per minute
+  errorRate: number; // Percentage of backspaces
+  averageKeyHoldTime: number; // Average dwell time
+  averageFlightTime: number; // Average flight time
+  averageTapRhythm: number; // Average time between taps
+  backspaceCount: number; // Total backspaces
 }
 
 interface KeystrokeData {
@@ -48,11 +55,24 @@ interface KeystrokeData {
   timestamp: number;
   pressTime: number;
   releaseTime: number;
-  dwellTime: number;
-  flightTime: number;
+  dwellTime: number; // Key hold time
+  flightTime: number; // Key flight time
   correct: boolean;
   position: number;
   pressure?: number;
+  isBackspace: boolean; // Track backspaces for error rate
+}
+
+interface TouchData {
+  type: 'tap' | 'swipe';
+  timestamp: number;
+  startX: number;
+  startY: number;
+  endX?: number;
+  endY?: number;
+  direction?: 'up' | 'down' | 'left' | 'right';
+  velocity?: number;
+  duration: number;
 }
 
 interface SensorData {
@@ -85,6 +105,12 @@ interface BehavioralMetrics {
     typingBursts: number[];
     concentrationLevel: number;
   };
+  touchMetrics: {
+    swipeData: TouchData[];
+    tapRhythm: number[];
+    swipeFrequency: number;
+    averageSwipeVelocity: number;
+  };
 }
 
 export default function TypingGameScreen() {
@@ -96,6 +122,7 @@ export default function TypingGameScreen() {
   const [startTime, setStartTime] = useState<number>(0);
   const [endTime, setEndTime] = useState<number>(0);
   const [keystrokeData, setKeystrokeData] = useState<KeystrokeData[]>([]);
+  const [touchData, setTouchData] = useState<TouchData[]>([]);
   const [sensorData, setSensorData] = useState<SensorData>({
     accelerometer: [],
     gyroscope: [],
@@ -112,18 +139,26 @@ export default function TypingGameScreen() {
     errors: 0,
     correctKeystrokes: 0,
     averageSpeed: 0,
-    consistency: 0
+    consistency: 0,
+    typingSpeed: 0,
+    errorRate: 0,
+    averageKeyHoldTime: 0,
+    averageFlightTime: 0,
+    averageTapRhythm: 0,
+    backspaceCount: 0
   });
   
   const inputRef = useRef<TextInput>(null);
   const keyPressStartTime = useRef<number>(0);
   const lastKeystrokeTime = useRef<number>(0);
+  const lastTapTime = useRef<number>(0);
+  const touchStartPosition = useRef<{ x: number; y: number } | null>(null);
+  const touchStartTime = useRef<number>(0);
   const sensorSubscriptions = useRef<any[]>([]);
 
   useEffect(() => {
     resetGame();
     return () => {
-      // ✅ Fixed: Use remove() instead of unsubscribe()
       cleanupSensors();
     };
   }, []);
@@ -134,69 +169,66 @@ export default function TypingGameScreen() {
     }
   }, [userInput, currentText]);
 
-const initializeSensors = async () => {
-  try {
-    const [accelAvailable, gyroAvailable, magnetAvailable] = await Promise.all([
-      Accelerometer.isAvailableAsync(),
-      Gyroscope.isAvailableAsync(),
-      Magnetometer.isAvailableAsync()
-    ]);
+  const initializeSensors = async () => {
+    try {
+      const [accelAvailable, gyroAvailable, magnetAvailable] = await Promise.all([
+        Accelerometer.isAvailableAsync(),
+        Gyroscope.isAvailableAsync(),
+        Magnetometer.isAvailableAsync()
+      ]);
 
-    console.log('Sensor availability:', { accelAvailable, gyroAvailable, magnetAvailable });
+      console.log('Sensor availability:', { accelAvailable, gyroAvailable, magnetAvailable });
 
-    // ✅ Create a local counter to track sensor data
-    let sensorDataCount = { accelerometer: 0, gyroscope: 0, magnetometer: 0 };
+      let sensorDataCount = { accelerometer: 0, gyroscope: 0, magnetometer: 0 };
 
-    if (accelAvailable) {
-      Accelerometer.setUpdateInterval(10000);
-      const accelerometerSub = Accelerometer.addListener(({ x, y, z }) => {
-        sensorDataCount.accelerometer++;
-        console.log('Accelerometer data:', { x, y, z }); // Debug log
-        setSensorData(prev => ({
-          ...prev,
-          accelerometer: [...prev.accelerometer.slice(-50), { x, y, z, timestamp: Date.now() }]
-        }));
-      });
-      sensorSubscriptions.current.push(accelerometerSub);
+      if (accelAvailable) {
+        Accelerometer.setUpdateInterval(200);
+        const accelerometerSub = Accelerometer.addListener(({ x, y, z }) => {
+          sensorDataCount.accelerometer++;
+          console.log('Accelerometer data:', { x, y, z });
+          setSensorData(prev => ({
+            ...prev,
+            accelerometer: [...prev.accelerometer.slice(-50), { x, y, z, timestamp: Date.now() }]
+          }));
+        });
+        sensorSubscriptions.current.push(accelerometerSub);
+      }
+
+      if (gyroAvailable) {
+        Gyroscope.setUpdateInterval(200);
+        const gyroscopeSub = Gyroscope.addListener(({ x, y, z }) => {
+          sensorDataCount.gyroscope++;
+          console.log('Gyroscope data:', { x, y, z });
+          setSensorData(prev => ({
+            ...prev,
+            gyroscope: [...prev.gyroscope.slice(-50), { x, y, z, timestamp: Date.now() }]
+          }));
+        });
+        sensorSubscriptions.current.push(gyroscopeSub);
+      }
+
+      if (magnetAvailable) {
+        Magnetometer.setUpdateInterval(200);
+        const magnetometerSub = Magnetometer.addListener(({ x, y, z }) => {
+          sensorDataCount.magnetometer++;
+          console.log('Magnetometer data:', { x, y, z });
+          setSensorData(prev => ({
+            ...prev,
+            magnetometer: [...prev.magnetometer.slice(-50), { x, y, z, timestamp: Date.now() }]
+          }));
+        });
+        sensorSubscriptions.current.push(magnetometerSub);
+      }
+
+      setTimeout(() => {
+        console.log('Sensor data count after 15 seconds:', sensorDataCount);
+      }, 15000);
+
+    } catch (error) {
+      console.error('Error initializing sensors:', error);
     }
+  };
 
-    if (gyroAvailable) {
-      Gyroscope.setUpdateInterval(10000);
-      const gyroscopeSub = Gyroscope.addListener(({ x, y, z }) => {
-        sensorDataCount.gyroscope++;
-        console.log('Gyroscope data:', { x, y, z }); // Debug log
-        setSensorData(prev => ({
-          ...prev,
-          gyroscope: [...prev.gyroscope.slice(-50), { x, y, z, timestamp: Date.now() }]
-        }));
-      });
-      sensorSubscriptions.current.push(gyroscopeSub);
-    }
-
-    if (magnetAvailable) {
-      Magnetometer.setUpdateInterval(10000);
-      const magnetometerSub = Magnetometer.addListener(({ x, y, z }) => {
-        sensorDataCount.magnetometer++;
-        console.log('Magnetometer data:', { x, y, z }); // Debug log
-        setSensorData(prev => ({
-          ...prev,
-          magnetometer: [...prev.magnetometer.slice(-50), { x, y, z, timestamp: Date.now() }]
-        }));
-      });
-      sensorSubscriptions.current.push(magnetometerSub);
-    }
-
-    // ✅ Check the local counter instead of state
-    setTimeout(() => {
-      console.log('Sensor data count after 3 seconds:', sensorDataCount);
-    }, 3000);
-
-  } catch (error) {
-    console.error('Error initializing sensors:', error);
-  }
-};
-
-  // ✅ Fixed cleanup function
   const cleanupSensors = () => {
     sensorSubscriptions.current.forEach(sub => sub.remove());
     sensorSubscriptions.current = [];
@@ -210,6 +242,7 @@ const initializeSensors = async () => {
     setGameStarted(false);
     setGameCompleted(false);
     setKeystrokeData([]);
+    setTouchData([]);
     setSensorData({
       accelerometer: [],
       gyroscope: [],
@@ -226,9 +259,14 @@ const initializeSensors = async () => {
       errors: 0,
       correctKeystrokes: 0,
       averageSpeed: 0,
-      consistency: 0
+      consistency: 0,
+      typingSpeed: 0,
+      errorRate: 0,
+      averageKeyHoldTime: 0,
+      averageFlightTime: 0,
+      averageTapRhythm: 0,
+      backspaceCount: 0
     });
-    // Clean up any existing sensors
     cleanupSensors();
   };
 
@@ -247,7 +285,6 @@ const initializeSensors = async () => {
     setIsGameActive(false);
     setGameCompleted(true);
     
-    // ✅ Fixed: Use remove() instead of unsubscribe()
     cleanupSensors();
     
     const calculatedStats = calculateComprehensiveStats(endTime);
@@ -258,38 +295,22 @@ const initializeSensors = async () => {
     
     inputRef.current?.blur();
 
-    // Mark typing test as completed and show completion dialog
     await AsyncStorage.setItem('typingTestCompleted', 'true');
     
+    // Auto-redirect after 3 seconds
     // setTimeout(() => {
-    //   Alert.alert(
-    //     'Test Complete!',
-    //     `Excellent! Your typing speed: ${calculatedStats.wpm} WPM with ${calculatedStats.accuracy}% accuracy.`,
-    //     [
-    //       {
-    //         text: 'Continue to Banking',
-    //         onPress: () => router.replace('/(tabs)'),
-    //         style: 'default'
-    //       },
-    //       {
-    //         text: 'Try Again',
-    //         onPress: () => resetGame(),
-    //         style: 'cancel'
-    //       }
-    //     ]
-    //   );
-    // }, 1000);
+    //   router.replace('/(tabs)');
+    // }, 3000);
   };
 
   const calculateComprehensiveStats = (endTime: number): TypingStats => {
-    const totalTime = (endTime - startTime) / 1000; // in seconds
+    const totalTime = (endTime - startTime) / 1000;
     const totalWords = currentText.split(' ').length;
     const wpm = Math.round((totalWords / totalTime) * 60);
     
     let correctChars = 0;
     let errors = 0;
     
-    // Calculate accuracy and errors
     for (let i = 0; i < Math.min(userInput.length, currentText.length); i++) {
       if (userInput[i] === currentText[i]) {
         correctChars++;
@@ -301,8 +322,11 @@ const initializeSensors = async () => {
     const accuracy = Math.round((correctChars / currentText.length) * 100);
     const correctKeystrokes = correctChars;
     
-    // Calculate average speed and consistency
-    const keystrokeTimes = keystrokeData.map(k => k.dwellTime).filter(t => t > 0);
+    // ✅ Enhanced calculations
+    const keystrokeTimes = keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime).filter(t => t > 0);
+    const flightTimes = keystrokeData.filter(k => k.flightTime > 0).map(k => k.flightTime);
+    const backspaceCount = keystrokeData.filter(k => k.isBackspace).length;
+    
     const averageSpeed = keystrokeTimes.length > 0 
       ? keystrokeTimes.reduce((a, b) => a + b, 0) / keystrokeTimes.length 
       : 0;
@@ -310,15 +334,29 @@ const initializeSensors = async () => {
     const speedVariance = calculateVariance(keystrokeTimes);
     const consistency = Math.max(0, 100 - (speedVariance / 100));
     
-    // ✅ Add debug logging for stats calculation
-    console.log('Stats calculation:', {
-      totalTime,
-      totalWords,
-      wpm,
-      correctChars,
-      accuracy,
-      userInputLength: userInput.length,
-      currentTextLength: currentText.length
+    // Characters per minute
+    const typingSpeed = Math.round((userInput.length / totalTime) * 60);
+    
+    // Error rate as percentage
+    const errorRate = keystrokeData.length > 0 ? Math.round((backspaceCount / keystrokeData.length) * 100) : 0;
+    
+    // Average key hold time and flight time
+    const averageKeyHoldTime = keystrokeTimes.length > 0 ? 
+      Math.round(keystrokeTimes.reduce((a, b) => a + b, 0) / keystrokeTimes.length) : 0;
+    const averageFlightTime = flightTimes.length > 0 ? 
+      Math.round(flightTimes.reduce((a, b) => a + b, 0) / flightTimes.length) : 0;
+    
+    // Tap rhythm
+    const tapIntervals = [];
+    for (let i = 1; i < keystrokeData.length; i++) {
+      tapIntervals.push(keystrokeData[i].timestamp - keystrokeData[i-1].timestamp);
+    }
+    const averageTapRhythm = tapIntervals.length > 0 ? 
+      Math.round(tapIntervals.reduce((a, b) => a + b, 0) / tapIntervals.length) : 0;
+    
+    console.log('Enhanced stats calculation:', {
+      totalTime, totalWords, wpm, correctChars, accuracy,
+      typingSpeed, errorRate, averageKeyHoldTime, averageFlightTime, averageTapRhythm
     });
     
     return {
@@ -329,28 +367,32 @@ const initializeSensors = async () => {
       errors,
       correctKeystrokes,
       averageSpeed: Math.round(averageSpeed),
-      consistency: Math.round(consistency)
+      consistency: Math.round(consistency),
+      typingSpeed,
+      errorRate,
+      averageKeyHoldTime,
+      averageFlightTime,
+      averageTapRhythm,
+      backspaceCount
     };
   };
 
   const analyzeBehavioralPatterns = (): BehavioralMetrics => {
-    const dwellTimes = keystrokeData.map(k => k.dwellTime).filter(t => t > 0);
-    const flightTimes = keystrokeData.map(k => k.flightTime).filter(t => t > 0);
+    const dwellTimes = keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime).filter(t => t > 0);
+    const flightTimes = keystrokeData.filter(k => k.flightTime > 0).map(k => k.flightTime);
     const interKeyIntervals = [];
     
-    // Calculate inter-key intervals
     for (let i = 1; i < keystrokeData.length; i++) {
       const interval = keystrokeData[i].timestamp - keystrokeData[i-1].timestamp;
       interKeyIntervals.push(interval);
     }
 
-    // Analyze pause patterns
-    const pausePatterns = interKeyIntervals.filter(interval => interval > 500); // Pauses > 500ms
+    const pausePatterns = interKeyIntervals.filter(interval => interval > 500);
     const typingBursts: number[] = [];
     let currentBurst = 0;
     
     interKeyIntervals.forEach(interval => {
-      if (interval < 200) { // Fast typing
+      if (interval < 200) {
         currentBurst++;
       } else {
         if (currentBurst > 0) {
@@ -360,13 +402,21 @@ const initializeSensors = async () => {
       }
     });
 
-    // Calculate sensor-based metrics
     const movementPatterns = sensorData.accelerometer.map(reading => 
       Math.sqrt(reading.x * reading.x + reading.y * reading.y + reading.z * reading.z)
     );
     
     const stabilityScore = calculateDeviceStability();
     const concentrationLevel = calculateConcentrationLevel();
+
+    // ✅ Enhanced touch metrics
+    const swipeData = touchData.filter(t => t.type === 'swipe');
+    const tapRhythm = touchData.filter(t => t.type === 'tap').map((_, i, arr) => 
+      i > 0 ? arr[i].timestamp - arr[i-1].timestamp : 0
+    ).filter(t => t > 0);
+    
+    const averageSwipeVelocity = swipeData.length > 0 ? 
+      swipeData.reduce((sum, swipe) => sum + (swipe.velocity || 0), 0) / swipeData.length : 0;
 
     return {
       typingPatterns: {
@@ -378,7 +428,7 @@ const initializeSensors = async () => {
         interKeyInterval: interKeyIntervals.reduce((a, b) => a + b, 0) / interKeyIntervals.length || 0,
         pausePatterns: pausePatterns,
         speedVariation: calculateSpeedVariation(),
-        errorRate: (stats.errors / stats.keystrokes) * 100 || 0,
+        errorRate: (stats.backspaceCount / keystrokeData.length) * 100 || 0,
         correctionPatterns: calculateCorrectionPatterns()
       },
       sensorData: {
@@ -392,6 +442,12 @@ const initializeSensors = async () => {
         averagePauseLength: pausePatterns.reduce((a, b) => a + b, 0) / pausePatterns.length || 0,
         typingBursts,
         concentrationLevel
+      },
+      touchMetrics: {
+        swipeData,
+        tapRhythm,
+        swipeFrequency: swipeData.length,
+        averageSwipeVelocity
       }
     };
   };
@@ -414,20 +470,14 @@ const initializeSensors = async () => {
     const speeds = [];
     for (let i = 0; i < keystrokeData.length - 5; i++) {
       const timeSpan = keystrokeData[i+4].timestamp - keystrokeData[i].timestamp;
-      const speed = 5000 / timeSpan; // characters per second * 1000
+      const speed = 5000 / timeSpan;
       speeds.push(speed);
     }
     return calculateVariance(speeds);
   };
 
   const calculateCorrectionPatterns = (): number => {
-    let corrections = 0;
-    for (let i = 1; i < keystrokeData.length; i++) {
-      if (keystrokeData[i].key === 'Backspace') {
-        corrections++;
-      }
-    }
-    return corrections;
+    return keystrokeData.filter(k => k.isBackspace).length;
   };
 
   const calculateDeviceStability = (): number => {
@@ -438,7 +488,7 @@ const initializeSensors = async () => {
     );
     
     const variance = calculateVariance(movements);
-    return Math.max(0, 100 - (variance * 10)); // Scale variance to 0-100
+    return Math.max(0, 100 - (variance * 10));
   };
 
   const calculateConcentrationLevel = (): number => {
@@ -446,7 +496,7 @@ const initializeSensors = async () => {
       i > 0 && (keystrokeData[i].timestamp - keystrokeData[i-1].timestamp) > 1000
     ).length;
     
-    const maxPauses = keystrokeData.length / 10; // Expected max pauses
+    const maxPauses = keystrokeData.length / 10;
     return Math.max(0, 100 - ((pauseCount / maxPauses) * 100));
   };
 
@@ -458,29 +508,50 @@ const initializeSensors = async () => {
         return;
       }
 
-      // ✅ Updated API endpoint to match your server
+      const enhancedBehavioralData = {
+        keystrokeData,
+        touchData,
+        behavioralMetrics,
+        typingStats,
+        sessionData: {
+          timestamp: new Date().toISOString(),
+          textLength: currentText.length,
+          completionTime: (endTime - startTime) / 1000,
+          // ✅ Enhanced metrics for backend
+          keyHoldTimeStats: {
+            average: stats.averageKeyHoldTime,
+            variance: calculateVariance(keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime)),
+            min: Math.min(...keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime)),
+            max: Math.max(...keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime))
+          },
+          flightTimeStats: {
+            average: stats.averageFlightTime,
+            variance: calculateVariance(keystrokeData.filter(k => k.flightTime > 0).map(k => k.flightTime)),
+          },
+          swipeAnalysis: {
+            totalSwipes: behavioralMetrics.touchMetrics.swipeFrequency,
+            averageSwipeVelocity: behavioralMetrics.touchMetrics.averageSwipeVelocity
+          },
+          tapRhythmStats: {
+            averageInterval: stats.averageTapRhythm,
+            rhythmVariance: calculateVariance(behavioralMetrics.touchMetrics.tapRhythm)
+          }
+        }
+      };
+
       const response = await fetch('http://192.168.1.100:3001/api/behavior/typing', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          keystrokeData,
-          behavioralMetrics,
-          typingStats,
-          sessionData: {
-            timestamp: new Date().toISOString(),
-            textLength: currentText.length,
-            completionTime: (endTime - startTime) / 1000
-          }
-        })
+        body: JSON.stringify(enhancedBehavioralData)
       });
 
       const data = await response.json();
       
       if (data.success) {
-        console.log('Behavioral data saved successfully:', data);
+        console.log('Enhanced behavioral data saved successfully:', data);
       } else {
         console.error('Failed to save behavioral data:', data.message);
       }
@@ -489,17 +560,21 @@ const initializeSensors = async () => {
     }
   };
 
+  // ✅ Enhanced handleTextChange with comprehensive tracking
   const handleTextChange = (text: string) => {
     if (!isGameActive) return;
     
     const currentTime = Date.now();
     
-    // Record keystroke data with comprehensive metrics
+    // Handle key press (character added)
     if (text.length > userInput.length) {
-      // Key pressed
       const newChar = text[text.length - 1];
       const isCorrect = newChar === currentText[text.length - 1];
+      
+      // ✅ Calculate key hold time (dwell time)
       const dwellTime = currentTime - (keyPressStartTime.current || currentTime);
+      
+      // ✅ Calculate flight time (time between last key release and current key press)
       const flightTime = lastKeystrokeTime.current > 0 
         ? currentTime - lastKeystrokeTime.current 
         : 0;
@@ -512,19 +587,42 @@ const initializeSensors = async () => {
         dwellTime,
         flightTime,
         correct: isCorrect,
-        position: text.length - 1
+        position: text.length - 1,
+        isBackspace: false
       }]);
       
+      lastKeystrokeTime.current = currentTime;
+    } 
+    // ✅ Handle backspace (character removed) - for error rate calculation
+    else if (text.length < userInput.length) {
+      const backspaceData = {
+        key: 'Backspace',
+        timestamp: currentTime,
+        pressTime: keyPressStartTime.current || currentTime,
+        releaseTime: currentTime,
+        dwellTime: currentTime - (keyPressStartTime.current || currentTime),
+        flightTime: lastKeystrokeTime.current > 0 
+          ? currentTime - lastKeystrokeTime.current 
+          : 0,
+        correct: false,
+        position: text.length,
+        isBackspace: true
+      };
+      
+      setKeystrokeData(prev => [...prev, backspaceData]);
       lastKeystrokeTime.current = currentTime;
     }
     
     setUserInput(text);
     
-    // ✅ Add real-time stats calculation
+    // ✅ Enhanced real-time stats calculation
     if (text.length > 0) {
-      const elapsedTime = (currentTime - startTime) / 1000; // seconds
-      const totalWords = text.split(' ').length;
+      const elapsedTime = (currentTime - startTime) / 1000;
+      const totalWords = text.trim().split(/\s+/).length;
       const currentWPM = elapsedTime > 0 ? Math.round((totalWords / elapsedTime) * 60) : 0;
+      
+      // ✅ Calculate typing speed in characters per minute
+      const charactersPerMinute = elapsedTime > 0 ? Math.round((text.length / elapsedTime) * 60) : 0;
       
       let correctChars = 0;
       for (let i = 0; i < Math.min(text.length, currentText.length); i++) {
@@ -534,18 +632,110 @@ const initializeSensors = async () => {
       }
       const currentAccuracy = text.length > 0 ? Math.round((correctChars / text.length) * 100) : 0;
       
+      // ✅ Calculate error rate as percentage of backspaces
+      const backspaceCount = keystrokeData.filter(k => k.isBackspace).length + 
+                            (text.length < userInput.length ? 1 : 0);
+      const errorRate = keystrokeData.length > 0 ? 
+                       Math.round((backspaceCount / keystrokeData.length) * 100) : 0;
+      
+      // ✅ Calculate average key hold time and flight time
+      const dwellTimes = keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime);
+      const flightTimes = keystrokeData.filter(k => k.flightTime > 0).map(k => k.flightTime);
+      
+      const averageKeyHoldTime = dwellTimes.length > 0 ? 
+                                Math.round(dwellTimes.reduce((a, b) => a + b, 0) / dwellTimes.length) : 0;
+      const averageFlightTime = flightTimes.length > 0 ? 
+                               Math.round(flightTimes.reduce((a, b) => a + b, 0) / flightTimes.length) : 0;
+      
+      // ✅ Calculate tap rhythm (time between consecutive keystrokes)
+      const tapIntervals = [];
+      for (let i = 1; i < keystrokeData.length; i++) {
+        tapIntervals.push(keystrokeData[i].timestamp - keystrokeData[i-1].timestamp);
+      }
+      const averageTapRhythm = tapIntervals.length > 0 ? 
+                              Math.round(tapIntervals.reduce((a, b) => a + b, 0) / tapIntervals.length) : 0;
+      
       // Update stats in real-time
       setStats(prev => ({
         ...prev,
         wpm: currentWPM,
         accuracy: currentAccuracy,
-        keystrokes: text.length
+        keystrokes: text.length,
+        errors: backspaceCount,
+        typingSpeed: charactersPerMinute,
+        errorRate: errorRate,
+        averageKeyHoldTime: averageKeyHoldTime,
+        averageFlightTime: averageFlightTime,
+        averageTapRhythm: averageTapRhythm,
+        backspaceCount: backspaceCount
       }));
     }
   };
 
   const handleKeyPress = () => {
     keyPressStartTime.current = Date.now();
+  };
+
+  // ✅ Touch event handlers for swipe and tap detection
+  const handleTouchStart = (event: any) => {
+    const touch = event.nativeEvent;
+    touchStartPosition.current = { x: touch.pageX, y: touch.pageY };
+    touchStartTime.current = Date.now();
+  };
+
+  const handleTouchEnd = (event: any) => {
+    if (!touchStartPosition.current) return;
+    
+    const touch = event.nativeEvent;
+    const currentTime = Date.now();
+    const duration = currentTime - touchStartTime.current;
+    const deltaX = touch.pageX - touchStartPosition.current.x;
+    const deltaY = touch.pageY - touchStartPosition.current.y;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    
+    // ✅ Detect swipe vs tap based on distance and duration
+    if (distance > 50 && duration < 1000) { // Swipe detected
+      const velocity = distance / duration;
+      let direction: 'up' | 'down' | 'left' | 'right' = 'right';
+      
+      // ✅ Determine swipe direction
+      if (Math.abs(deltaX) > Math.abs(deltaY)) {
+        direction = deltaX > 0 ? 'right' : 'left';
+      } else {
+        direction = deltaY > 0 ? 'down' : 'up';
+      }
+      
+      const swipeData: TouchData = {
+        type: 'swipe',
+        timestamp: currentTime,
+        startX: touchStartPosition.current.x,
+        startY: touchStartPosition.current.y,
+        endX: touch.pageX,
+        endY: touch.pageY,
+        direction,
+        velocity,
+        duration
+      };
+      
+      setTouchData(prev => [...prev, swipeData]);
+      
+    } else if (distance < 20) { // Tap detected
+      // ✅ Calculate tap rhythm (time between taps)
+      const tapRhythm = lastTapTime.current > 0 ? currentTime - lastTapTime.current : 0;
+      
+      const tapData: TouchData = {
+        type: 'tap',
+        timestamp: currentTime,
+        startX: touchStartPosition.current.x,
+        startY: touchStartPosition.current.y,
+        duration
+      };
+      
+      setTouchData(prev => [...prev, tapData]);
+      lastTapTime.current = currentTime;
+    }
+    
+    touchStartPosition.current = null;
   };
 
   const renderText = () => {
@@ -607,28 +797,32 @@ const initializeSensors = async () => {
       </LinearGradient>
 
       <ScrollView style={styles.content}>
-        {/* Enhanced Game Stats */}
+        {/* ✅ Enhanced Game Stats with new metrics */}
         {gameStarted && (
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{Math.round((userInput.length / currentText.length) * 100)}%</Text>
-              <Text style={styles.statLabel}>Progress</Text>
+              <Text style={styles.statValue}>{stats.typingSpeed}</Text>
+              <Text style={styles.statLabel}>CPM</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: getWPMColor(stats.wpm) }]}>
-                {stats.wpm || 0}
-              </Text>
-              <Text style={styles.statLabel}>WPM</Text>
+              <Text style={styles.statValue}>{stats.averageKeyHoldTime}ms</Text>
+              <Text style={styles.statLabel}>Hold Time</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: getAccuracyColor(stats.accuracy) }]}>
-                {stats.accuracy || 0}%
-              </Text>
-              <Text style={styles.statLabel}>Accuracy</Text>
+              <Text style={styles.statValue}>{stats.averageFlightTime}ms</Text>
+              <Text style={styles.statLabel}>Flight Time</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{stats.consistency || 0}%</Text>
-              <Text style={styles.statLabel}>Consistency</Text>
+              <Text style={styles.statValue}>{stats.errorRate}%</Text>
+              <Text style={styles.statLabel}>Error Rate</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{touchData.filter(t => t.type === 'swipe').length}</Text>
+              <Text style={styles.statLabel}>Swipes</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{stats.averageTapRhythm}ms</Text>
+              <Text style={styles.statLabel}>Tap Rhythm</Text>
             </View>
           </View>
         )}
@@ -636,7 +830,7 @@ const initializeSensors = async () => {
         {/* Sensor Data Display */}
         {gameStarted && (
           <View style={styles.sensorContainer}>
-            <Text style={styles.sensorTitle}>Device Stability</Text>
+            <Text style={styles.sensorTitle}>Device Stability & Behavior</Text>
             <View style={styles.sensorStats}>
               <View style={styles.sensorItem}>
                 <Text style={styles.sensorValue}>{sensorData.stabilityScore}%</Text>
@@ -645,6 +839,10 @@ const initializeSensors = async () => {
               <View style={styles.sensorItem}>
                 <Text style={styles.sensorValue}>{sensorData.accelerometer.length}</Text>
                 <Text style={styles.sensorLabel}>Readings</Text>
+              </View>
+              <View style={styles.sensorItem}>
+                <Text style={styles.sensorValue}>{stats.backspaceCount}</Text>
+                <Text style={styles.sensorLabel}>Backspaces</Text>
               </View>
             </View>
           </View>
@@ -657,7 +855,7 @@ const initializeSensors = async () => {
           </View>
         </View>
 
-        {/* Input Field */}
+        {/* ✅ Enhanced Input Field with touch tracking */}
         <View style={styles.inputContainer}>
           <TextInput
             ref={inputRef}
@@ -665,6 +863,8 @@ const initializeSensors = async () => {
             value={userInput}
             onChangeText={handleTextChange}
             onKeyPress={handleKeyPress}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
             placeholder={gameStarted ? "Start typing..." : "Press Start to begin"}
             multiline
             editable={isGameActive}
@@ -693,7 +893,7 @@ const initializeSensors = async () => {
           )}
         </View>
 
-        {/* Enhanced Results */}
+        {/* ✅ Enhanced Results with new metrics */}
         {gameCompleted && (
           <View style={styles.resultsContainer}>
             <Text style={styles.resultsTitle}>Test Complete!</Text>
@@ -714,23 +914,23 @@ const initializeSensors = async () => {
               </View>
               
               <View style={styles.resultItem}>
-                <Text style={styles.resultLabel}>Consistency</Text>
-                <Text style={styles.resultValue}>{stats.consistency}%</Text>
+                <Text style={styles.resultLabel}>Avg Hold Time</Text>
+                <Text style={styles.resultValue}>{stats.averageKeyHoldTime}ms</Text>
               </View>
               
               <View style={styles.resultItem}>
-                <Text style={styles.resultLabel}>Time Taken</Text>
-                <Text style={styles.resultValue}>{stats.totalTime}s</Text>
+                <Text style={styles.resultLabel}>Avg Flight Time</Text>
+                <Text style={styles.resultValue}>{stats.averageFlightTime}ms</Text>
               </View>
               
               <View style={styles.resultItem}>
-                <Text style={styles.resultLabel}>Keystrokes</Text>
-                <Text style={styles.resultValue}>{stats.keystrokes}</Text>
+                <Text style={styles.resultLabel}>Error Rate</Text>
+                <Text style={styles.resultValue}>{stats.errorRate}%</Text>
               </View>
               
               <View style={styles.resultItem}>
-                <Text style={styles.resultLabel}>Errors</Text>
-                <Text style={styles.resultValue}>{stats.errors}</Text>
+                <Text style={styles.resultLabel}>Tap Rhythm</Text>
+                <Text style={styles.resultValue}>{stats.averageTapRhythm}ms</Text>
               </View>
             </View>
 
@@ -802,6 +1002,7 @@ const styles = StyleSheet.create({
   },
   statsContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-around',
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -815,14 +1016,16 @@ const styles = StyleSheet.create({
   },
   statItem: {
     alignItems: 'center',
+    minWidth: '30%',
+    marginBottom: 8,
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#666',
     marginTop: 4,
   },
