@@ -36,7 +36,7 @@ export default function HomeScreen() {
           <View style={styles.actions}>
             <TouchableOpacity 
               style={styles.primaryButton}
-              onPress={() => router.push('/auth')}
+              onPress={() => router.push('/typing-game')}
             >
               <Text style={styles.primaryButtonText}>Get Started</Text>
               <Ionicons name="arrow-forward" size={20} color="#019EEC" />

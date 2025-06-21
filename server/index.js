@@ -7,12 +7,13 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 require('dotenv').config();
-connectDB(); // connect to DB
+connectDB();
 
 app.use(cors());
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
+app.use('/api/behavior', require('./routes/typing')); 
 
 app.get('/', (req, res) => {
   res.send('Auth API Running');
