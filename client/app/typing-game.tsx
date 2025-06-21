@@ -148,7 +148,7 @@ const initializeSensors = async () => {
     let sensorDataCount = { accelerometer: 0, gyroscope: 0, magnetometer: 0 };
 
     if (accelAvailable) {
-      Accelerometer.setUpdateInterval(10000);
+      Accelerometer.setUpdateInterval(200);
       const accelerometerSub = Accelerometer.addListener(({ x, y, z }) => {
         sensorDataCount.accelerometer++;
         console.log('Accelerometer data:', { x, y, z }); // Debug log
@@ -161,7 +161,7 @@ const initializeSensors = async () => {
     }
 
     if (gyroAvailable) {
-      Gyroscope.setUpdateInterval(10000);
+      Gyroscope.setUpdateInterval(200);
       const gyroscopeSub = Gyroscope.addListener(({ x, y, z }) => {
         sensorDataCount.gyroscope++;
         console.log('Gyroscope data:', { x, y, z }); // Debug log
@@ -174,7 +174,7 @@ const initializeSensors = async () => {
     }
 
     if (magnetAvailable) {
-      Magnetometer.setUpdateInterval(10000);
+      Magnetometer.setUpdateInterval(200);
       const magnetometerSub = Magnetometer.addListener(({ x, y, z }) => {
         sensorDataCount.magnetometer++;
         console.log('Magnetometer data:', { x, y, z }); // Debug log
