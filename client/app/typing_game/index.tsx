@@ -9,18 +9,23 @@ import {
   ScrollView,
   Alert,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  Accelerometer,
-  Gyroscope,
-  Magnetometer,
-  DeviceMotion
-} from 'expo-sensors';
+import * as Location from 'expo-location';
+import * as Device from 'expo-device';
+import * as Network from 'expo-network';
+// ❌ Commented out sensor imports
+// import {
+//   Accelerometer,
+//   Gyroscope,
+//   Magnetometer,
+//   DeviceMotion
+// } from 'expo-sensors';
 
 const { width } = Dimensions.get('window');
 
@@ -48,9 +53,10 @@ interface TypingStats {
   averageFlightTime: number; // Average flight time
   averageTapRhythm: number; // Average time between taps
   backspaceCount: number; // Total backspaces
+  averageKeyboardLatency: number; // ✅ Average keyboard latency
 }
 
-interface KeystrokeData {
+interface EnhancedKeystrokeData {
   key: string;
   timestamp: number;
   pressTime: number;
@@ -61,6 +67,8 @@ interface KeystrokeData {
   position: number;
   pressure?: number;
   isBackspace: boolean; // Track backspaces for error rate
+  inputLatency: number; // ✅ Time from key press to text change
+  systemLatency: number; // ✅ System processing time
 }
 
 interface TouchData {
@@ -82,6 +90,33 @@ interface SensorData {
   deviceOrientation: string;
   movementPatterns: number[];
   stabilityScore: number;
+}
+
+interface DeviceMetrics {
+  keyboardLatency: number[];
+  ipAddress: string;
+  gpsLocation: {
+    latitude: number;
+    longitude: number;
+    accuracy: number;
+    timestamp: number;
+  } | null;
+  deviceInfo: {
+    brand: string;
+    model: string;
+    systemVersion: string;
+    uniqueId: string;
+    deviceType: string;
+    totalMemory: number;
+    usedMemory: number;
+    batteryLevel: number;
+    isCharging: boolean;
+  };
+  networkInfo: {
+    type: string;
+    isConnected: boolean;
+    isInternetReachable: boolean;
+  };
 }
 
 interface BehavioralMetrics {
@@ -111,6 +146,7 @@ interface BehavioralMetrics {
     swipeFrequency: number;
     averageSwipeVelocity: number;
   };
+  deviceMetrics: DeviceMetrics; // ✅ Added device metrics
 }
 
 export default function TypingGameScreen() {
@@ -121,7 +157,7 @@ export default function TypingGameScreen() {
   const [gameCompleted, setGameCompleted] = useState(false);
   const [startTime, setStartTime] = useState<number>(0);
   const [endTime, setEndTime] = useState<number>(0);
-  const [keystrokeData, setKeystrokeData] = useState<KeystrokeData[]>([]);
+  const [keystrokeData, setKeystrokeData] = useState<EnhancedKeystrokeData[]>([]);
   const [touchData, setTouchData] = useState<TouchData[]>([]);
   const [sensorData, setSensorData] = useState<SensorData>({
     accelerometer: [],
@@ -131,6 +167,30 @@ export default function TypingGameScreen() {
     movementPatterns: [],
     stabilityScore: 100
   });
+  
+  // ✅ Added device metrics state
+  const [deviceMetrics, setDeviceMetrics] = useState<DeviceMetrics>({
+    keyboardLatency: [],
+    ipAddress: '',
+    gpsLocation: null,
+    deviceInfo: {
+      brand: '',
+      model: '',
+      systemVersion: '',
+      uniqueId: '',
+      deviceType: '',
+      totalMemory: 0,
+      usedMemory: 0,
+      batteryLevel: 0,
+      isCharging: false,
+    },
+    networkInfo: {
+      type: '',
+      isConnected: false,
+      isInternetReachable: false,
+    }
+  });
+
   const [stats, setStats] = useState<TypingStats>({
     wpm: 0,
     accuracy: 0,
@@ -145,7 +205,8 @@ export default function TypingGameScreen() {
     averageKeyHoldTime: 0,
     averageFlightTime: 0,
     averageTapRhythm: 0,
-    backspaceCount: 0
+    backspaceCount: 0,
+    averageKeyboardLatency: 0
   });
   
   const inputRef = useRef<TextInput>(null);
@@ -155,6 +216,10 @@ export default function TypingGameScreen() {
   const touchStartPosition = useRef<{ x: number; y: number } | null>(null);
   const touchStartTime = useRef<number>(0);
   const sensorSubscriptions = useRef<any[]>([]);
+  
+  // ✅ Added refs for latency measurement
+  const keyPressTimestamp = useRef<number>(0);
+  const textChangeTimestamp = useRef<number>(0);
 
   useEffect(() => {
     resetGame();
@@ -169,60 +234,140 @@ export default function TypingGameScreen() {
     }
   }, [userInput, currentText]);
 
+  // ✅ Device information collection function
+  const collectDeviceInfo = async () => {
+    try {
+      // Get device information
+      const deviceInfo = {
+        brand: Device.brand || 'Unknown',
+        model: Device.modelName || 'Unknown',
+        systemVersion: Device.osVersion || 'Unknown',
+        uniqueId: Device.osInternalBuildId || 'Unknown',
+        deviceType: Device.deviceType?.toString() || 'Unknown',
+        totalMemory: 0, // Will be updated if available
+        usedMemory: 0, // Will be updated if available
+        batteryLevel: 1, // Default to 100%
+        isCharging: false,
+      };
+
+      // Get network information
+      const networkState = await Network.getNetworkStateAsync();
+      const networkInfo = {
+        type: networkState.type || 'unknown',
+        isConnected: networkState.isConnected || false,
+        isInternetReachable: networkState.isInternetReachable || false,
+      };
+
+      // Get IP address
+      let ipAddress = '';
+      try {
+        const ipInfo = await Network.getIpAddressAsync();
+        ipAddress = ipInfo || 'Unknown';
+      } catch (error) {
+        console.log('Could not get IP address:', error);
+        ipAddress = 'Unknown';
+      }
+
+      // Get GPS location
+      let gpsLocation = null;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
+          gpsLocation = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            accuracy: location.coords.accuracy || 0,
+            timestamp: location.timestamp,
+          };
+        }
+      } catch (error) {
+        console.log('Could not get GPS location:', error);
+      }
+
+      setDeviceMetrics(prev => ({
+        ...prev,
+        deviceInfo,
+        networkInfo,
+        ipAddress,
+        gpsLocation,
+      }));
+
+      console.log('Device metrics collected:', {
+        deviceInfo,
+        networkInfo,
+        ipAddress,
+        gpsLocation,
+      });
+
+    } catch (error) {
+      console.error('Error collecting device info:', error);
+    }
+  };
+
   const initializeSensors = async () => {
     try {
-      const [accelAvailable, gyroAvailable, magnetAvailable] = await Promise.all([
-        Accelerometer.isAvailableAsync(),
-        Gyroscope.isAvailableAsync(),
-        Magnetometer.isAvailableAsync()
-      ]);
+      // ❌ Commented out sensor availability checks
+      // const [accelAvailable, gyroAvailable, magnetAvailable] = await Promise.all([
+      //   Accelerometer.isAvailableAsync(),
+      //   Gyroscope.isAvailableAsync(),
+      //   Magnetometer.isAvailableAsync()
+      // ]);
 
-      console.log('Sensor availability:', { accelAvailable, gyroAvailable, magnetAvailable });
+      // console.log('Sensor availability:', { accelAvailable, gyroAvailable, magnetAvailable });
 
-      let sensorDataCount = { accelerometer: 0, gyroscope: 0, magnetometer: 0 };
+      // let sensorDataCount = { accelerometer: 0, gyroscope: 0, magnetometer: 0 };
 
-      if (accelAvailable) {
-        Accelerometer.setUpdateInterval(10000);
-        const accelerometerSub = Accelerometer.addListener(({ x, y, z }) => {
-          sensorDataCount.accelerometer++;
-          console.log('Accelerometer data:', { x, y, z });
-          setSensorData(prev => ({
-            ...prev,
-            accelerometer: [...prev.accelerometer.slice(-50), { x, y, z, timestamp: Date.now() }]
-          }));
-        });
-        sensorSubscriptions.current.push(accelerometerSub);
-      }
+      // ❌ Commented out accelerometer tracking
+      // if (accelAvailable) {
+      //   Accelerometer.setUpdateInterval(10000);
+      //   const accelerometerSub = Accelerometer.addListener(({ x, y, z }) => {
+      //     sensorDataCount.accelerometer++;
+      //     console.log('Accelerometer data:', { x, y, z });
+      //     setSensorData(prev => ({
+      //       ...prev,
+      //       accelerometer: [...prev.accelerometer.slice(-50), { x, y, z, timestamp: Date.now() }]
+      //     }));
+      //   });
+      //   sensorSubscriptions.current.push(accelerometerSub);
+      // }
 
-      if (gyroAvailable) {
-        Gyroscope.setUpdateInterval(10000);
-        const gyroscopeSub = Gyroscope.addListener(({ x, y, z }) => {
-          sensorDataCount.gyroscope++;
-          console.log('Gyroscope data:', { x, y, z });
-          setSensorData(prev => ({
-            ...prev,
-            gyroscope: [...prev.gyroscope.slice(-50), { x, y, z, timestamp: Date.now() }]
-          }));
-        });
-        sensorSubscriptions.current.push(gyroscopeSub);
-      }
+      // ❌ Commented out gyroscope tracking
+      // if (gyroAvailable) {
+      //   Gyroscope.setUpdateInterval(10000);
+      //   const gyroscopeSub = Gyroscope.addListener(({ x, y, z }) => {
+      //     sensorDataCount.gyroscope++;
+      //     console.log('Gyroscope data:', { x, y, z });
+      //     setSensorData(prev => ({
+      //       ...prev,
+      //       gyroscope: [...prev.gyroscope.slice(-50), { x, y, z, timestamp: Date.now() }]
+      //     }));
+      //   });
+      //   sensorSubscriptions.current.push(gyroscopeSub);
+      // }
 
-      if (magnetAvailable) {
-        Magnetometer.setUpdateInterval(10000);
-        const magnetometerSub = Magnetometer.addListener(({ x, y, z }) => {
-          sensorDataCount.magnetometer++;
-          console.log('Magnetometer data:', { x, y, z });
-          setSensorData(prev => ({
-            ...prev,
-            magnetometer: [...prev.magnetometer.slice(-50), { x, y, z, timestamp: Date.now() }]
-          }));
-        });
-        sensorSubscriptions.current.push(magnetometerSub);
-      }
+      // ❌ Commented out magnetometer tracking
+      // if (magnetAvailable) {
+      //   Magnetometer.setUpdateInterval(10000);
+      //   const magnetometerSub = Magnetometer.addListener(({ x, y, z }) => {
+      //     sensorDataCount.magnetometer++;
+      //     console.log('Magnetometer data:', { x, y, z });
+      //     setSensorData(prev => ({
+      //       ...prev,
+      //       magnetometer: [...prev.magnetometer.slice(-50), { x, y, z, timestamp: Date.now() }]
+      //     }));
+      //   });
+      //   sensorSubscriptions.current.push(magnetometerSub);
+      // }
 
-      setTimeout(() => {
-        console.log('Sensor data count after 15 seconds:', sensorDataCount);
-      }, 15000);
+      // ❌ Commented out sensor data logging
+      // setTimeout(() => {
+      //   console.log('Sensor data count after 15 seconds:', sensorDataCount);
+      // }, 15000);
+
+      console.log('Sensor tracking disabled - focusing on typing and device metrics only');
 
     } catch (error) {
       console.error('Error initializing sensors:', error);
@@ -265,7 +410,8 @@ export default function TypingGameScreen() {
       averageKeyHoldTime: 0,
       averageFlightTime: 0,
       averageTapRhythm: 0,
-      backspaceCount: 0
+      backspaceCount: 0,
+      averageKeyboardLatency: 0
     });
     cleanupSensors();
   };
@@ -275,7 +421,13 @@ export default function TypingGameScreen() {
     setGameStarted(true);
     setStartTime(Date.now());
     lastKeystrokeTime.current = Date.now();
-    initializeSensors();
+    
+    // ✅ Collect device information when game starts
+    collectDeviceInfo();
+    
+    // ❌ Commented out sensor initialization
+    // initializeSensors();
+    
     inputRef.current?.focus();
   };
 
@@ -296,11 +448,6 @@ export default function TypingGameScreen() {
     inputRef.current?.blur();
 
     await AsyncStorage.setItem('typingTestCompleted', 'true');
-    
-    // Auto-redirect after 3 seconds
-    // setTimeout(() => {
-    //   router.replace('/(tabs)');
-    // }, 3000);
   };
 
   const calculateComprehensiveStats = (endTime: number): TypingStats => {
@@ -354,9 +501,14 @@ export default function TypingGameScreen() {
     const averageTapRhythm = tapIntervals.length > 0 ? 
       Math.round(tapIntervals.reduce((a, b) => a + b, 0) / tapIntervals.length) : 0;
     
+    // ✅ Calculate average keyboard latency
+    const averageKeyboardLatency = deviceMetrics.keyboardLatency.length > 0 
+      ? Math.round(deviceMetrics.keyboardLatency.reduce((a, b) => a + b, 0) / deviceMetrics.keyboardLatency.length)
+      : 0;
+    
     console.log('Enhanced stats calculation:', {
       totalTime, totalWords, wpm, correctChars, accuracy,
-      typingSpeed, errorRate, averageKeyHoldTime, averageFlightTime, averageTapRhythm
+      typingSpeed, errorRate, averageKeyHoldTime, averageFlightTime, averageTapRhythm, averageKeyboardLatency
     });
     
     return {
@@ -373,7 +525,8 @@ export default function TypingGameScreen() {
       averageKeyHoldTime,
       averageFlightTime,
       averageTapRhythm,
-      backspaceCount
+      backspaceCount,
+      averageKeyboardLatency
     };
   };
 
@@ -402,14 +555,16 @@ export default function TypingGameScreen() {
       }
     });
 
-    const movementPatterns = sensorData.accelerometer.map(reading => 
-      Math.sqrt(reading.x * reading.x + reading.y * reading.y + reading.z * reading.z)
-    );
+    // ❌ Commented out sensor-based movement patterns
+    // const movementPatterns = sensorData.accelerometer.map(reading => 
+    //   Math.sqrt(reading.x * reading.x + reading.y * reading.y + reading.z * reading.z)
+    // );
     
-    const stabilityScore = calculateDeviceStability();
+    // ❌ Commented out device stability calculation
+    // const stabilityScore = calculateDeviceStability();
     const concentrationLevel = calculateConcentrationLevel();
 
-    // ✅ Enhanced touch metrics
+    // Enhanced touch metrics
     const swipeData = touchData.filter(t => t.type === 'swipe');
     const tapRhythm = touchData.filter(t => t.type === 'tap').map((_, i, arr) => 
       i > 0 ? arr[i].timestamp - arr[i-1].timestamp : 0
@@ -432,9 +587,13 @@ export default function TypingGameScreen() {
         correctionPatterns: calculateCorrectionPatterns()
       },
       sensorData: {
-        ...sensorData,
-        movementPatterns,
-        stabilityScore
+        // ❌ Commented out sensor data, using default values
+        accelerometer: [],
+        gyroscope: [],
+        magnetometer: [],
+        deviceOrientation: 'portrait',
+        movementPatterns: [],
+        stabilityScore: 100 // Default value
       },
       sessionMetrics: {
         sessionDuration: (endTime - startTime) / 1000,
@@ -448,7 +607,8 @@ export default function TypingGameScreen() {
         tapRhythm,
         swipeFrequency: swipeData.length,
         averageSwipeVelocity
-      }
+      },
+      deviceMetrics // ✅ Include device metrics
     };
   };
 
@@ -480,16 +640,17 @@ export default function TypingGameScreen() {
     return keystrokeData.filter(k => k.isBackspace).length;
   };
 
-  const calculateDeviceStability = (): number => {
-    if (sensorData.accelerometer.length < 10) return 100;
-    
-    const movements = sensorData.accelerometer.map(reading => 
-      Math.sqrt(reading.x * reading.x + reading.y * reading.y + reading.z * reading.z)
-    );
-    
-    const variance = calculateVariance(movements);
-    return Math.max(0, 100 - (variance * 10));
-  };
+  // ❌ Commented out device stability calculation
+  // const calculateDeviceStability = (): number => {
+  //   if (sensorData.accelerometer.length < 10) return 100;
+  //   
+  //   const movements = sensorData.accelerometer.map(reading => 
+  //     Math.sqrt(reading.x * reading.x + reading.y * reading.y + reading.z * reading.z)
+  //   );
+  //   
+  //   const variance = calculateVariance(movements);
+  //   return Math.max(0, 100 - (variance * 10));
+  // };
 
   const calculateConcentrationLevel = (): number => {
     const pauseCount = keystrokeData.filter((_, i, arr) => 
@@ -508,11 +669,27 @@ export default function TypingGameScreen() {
         return;
       }
 
+      // ✅ Calculate latency statistics
+      const latencyStats = {
+        averageKeyboardLatency: deviceMetrics.keyboardLatency.length > 0 
+          ? deviceMetrics.keyboardLatency.reduce((a, b) => a + b, 0) / deviceMetrics.keyboardLatency.length
+          : 0,
+        minLatency: deviceMetrics.keyboardLatency.length > 0 
+          ? Math.min(...deviceMetrics.keyboardLatency)
+          : 0,
+        maxLatency: deviceMetrics.keyboardLatency.length > 0 
+          ? Math.max(...deviceMetrics.keyboardLatency)
+          : 0,
+        latencyVariance: calculateVariance(deviceMetrics.keyboardLatency),
+      };
+
       const enhancedBehavioralData = {
         keystrokeData,
         touchData,
         behavioralMetrics,
         typingStats,
+        deviceMetrics, // ✅ Include all device metrics
+        latencyStats, // ✅ Include latency analysis
         sessionData: {
           timestamp: new Date().toISOString(),
           textLength: currentText.length,
@@ -521,8 +698,8 @@ export default function TypingGameScreen() {
           keyHoldTimeStats: {
             average: stats.averageKeyHoldTime,
             variance: calculateVariance(keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime)),
-            min: Math.min(...keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime)),
-            max: Math.max(...keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime))
+            min: keystrokeData.filter(k => !k.isBackspace).length > 0 ? Math.min(...keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime)) : 0,
+            max: keystrokeData.filter(k => !k.isBackspace).length > 0 ? Math.max(...keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime)) : 0
           },
           flightTimeStats: {
             average: stats.averageFlightTime,
@@ -535,6 +712,15 @@ export default function TypingGameScreen() {
           tapRhythmStats: {
             averageInterval: stats.averageTapRhythm,
             rhythmVariance: calculateVariance(behavioralMetrics.touchMetrics.tapRhythm)
+          },
+          // ✅ Enhanced device context
+          deviceContext: {
+            location: deviceMetrics.gpsLocation,
+            networkType: deviceMetrics.networkInfo.type,
+            batteryLevel: deviceMetrics.deviceInfo.batteryLevel,
+            ipAddress: deviceMetrics.ipAddress,
+            deviceBrand: deviceMetrics.deviceInfo.brand,
+            deviceModel: deviceMetrics.deviceInfo.model,
           }
         }
       };
@@ -551,7 +737,7 @@ export default function TypingGameScreen() {
       const data = await response.json();
       
       if (data.success) {
-        console.log('Enhanced behavioral data saved successfully:', data);
+        console.log('Enhanced behavioral data with device metrics saved successfully:', data);
       } else {
         console.error('Failed to save behavioral data:', data.message);
       }
@@ -560,11 +746,28 @@ export default function TypingGameScreen() {
     }
   };
 
-  // ✅ Enhanced handleTextChange with comprehensive tracking
+  // ✅ Enhanced handleTextChange with comprehensive tracking and latency measurement
   const handleTextChange = (text: string) => {
     if (!isGameActive) return;
     
     const currentTime = Date.now();
+    textChangeTimestamp.current = currentTime;
+    
+    // ✅ Calculate keyboard latency (input lag)
+    const inputLatency = keyPressTimestamp.current > 0 
+      ? currentTime - keyPressTimestamp.current 
+      : 0;
+    
+    // ✅ Calculate system latency (processing time)
+    const systemLatency = performance.now() - keyPressTimestamp.current;
+    
+    // Store latency data
+    if (inputLatency > 0) {
+      setDeviceMetrics(prev => ({
+        ...prev,
+        keyboardLatency: [...prev.keyboardLatency.slice(-100), inputLatency] // Keep last 100 measurements
+      }));
+    }
     
     // Handle key press (character added)
     if (text.length > userInput.length) {
@@ -579,7 +782,7 @@ export default function TypingGameScreen() {
         ? currentTime - lastKeystrokeTime.current 
         : 0;
       
-      setKeystrokeData(prev => [...prev, {
+      const enhancedKeystrokeData: EnhancedKeystrokeData = {
         key: newChar,
         timestamp: currentTime,
         pressTime: keyPressStartTime.current || currentTime,
@@ -588,14 +791,17 @@ export default function TypingGameScreen() {
         flightTime,
         correct: isCorrect,
         position: text.length - 1,
-        isBackspace: false
-      }]);
+        isBackspace: false,
+        inputLatency, // ✅ Keyboard latency
+        systemLatency, // ✅ System processing latency
+      };
       
+      setKeystrokeData(prev => [...prev, enhancedKeystrokeData]);
       lastKeystrokeTime.current = currentTime;
     } 
     // ✅ Handle backspace (character removed) - for error rate calculation
     else if (text.length < userInput.length) {
-      const backspaceData = {
+      const backspaceData: EnhancedKeystrokeData = {
         key: 'Backspace',
         timestamp: currentTime,
         pressTime: keyPressStartTime.current || currentTime,
@@ -606,7 +812,9 @@ export default function TypingGameScreen() {
           : 0,
         correct: false,
         position: text.length,
-        isBackspace: true
+        isBackspace: true,
+        inputLatency,
+        systemLatency,
       };
       
       setKeystrokeData(prev => [...prev, backspaceData]);
@@ -655,6 +863,11 @@ export default function TypingGameScreen() {
       const averageTapRhythm = tapIntervals.length > 0 ? 
                               Math.round(tapIntervals.reduce((a, b) => a + b, 0) / tapIntervals.length) : 0;
       
+      // ✅ Calculate average keyboard latency
+      const averageKeyboardLatency = deviceMetrics.keyboardLatency.length > 0 
+        ? Math.round(deviceMetrics.keyboardLatency.reduce((a, b) => a + b, 0) / deviceMetrics.keyboardLatency.length)
+        : 0;
+      
       // Update stats in real-time
       setStats(prev => ({
         ...prev,
@@ -667,12 +880,14 @@ export default function TypingGameScreen() {
         averageKeyHoldTime: averageKeyHoldTime,
         averageFlightTime: averageFlightTime,
         averageTapRhythm: averageTapRhythm,
-        backspaceCount: backspaceCount
+        backspaceCount: backspaceCount,
+        averageKeyboardLatency: averageKeyboardLatency
       }));
     }
   };
 
   const handleKeyPress = () => {
+    keyPressTimestamp.current = Date.now();
     keyPressStartTime.current = Date.now();
   };
 
@@ -797,7 +1012,7 @@ export default function TypingGameScreen() {
       </LinearGradient>
 
       <ScrollView style={styles.content}>
-        {/* ✅ Enhanced Game Stats with new metrics */}
+        {/* ✅ Enhanced Game Stats with new metrics including keyboard latency */}
         {gameStarted && (
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
@@ -813,12 +1028,12 @@ export default function TypingGameScreen() {
               <Text style={styles.statLabel}>Flight Time</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{stats.errorRate}%</Text>
-              <Text style={styles.statLabel}>Error Rate</Text>
+              <Text style={styles.statValue}>{stats.averageKeyboardLatency}ms</Text>
+              <Text style={styles.statLabel}>Kbd Latency</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{touchData.filter(t => t.type === 'swipe').length}</Text>
-              <Text style={styles.statLabel}>Swipes</Text>
+              <Text style={styles.statValue}>{stats.errorRate}%</Text>
+              <Text style={styles.statLabel}>Error Rate</Text>
             </View>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>{stats.averageTapRhythm}ms</Text>
@@ -827,27 +1042,7 @@ export default function TypingGameScreen() {
           </View>
         )}
 
-        {/* Sensor Data Display */}
-        {gameStarted && (
-          <View style={styles.sensorContainer}>
-            <Text style={styles.sensorTitle}>Device Stability & Behavior</Text>
-            <View style={styles.sensorStats}>
-              <View style={styles.sensorItem}>
-                <Text style={styles.sensorValue}>{sensorData.stabilityScore}%</Text>
-                <Text style={styles.sensorLabel}>Stability</Text>
-              </View>
-              <View style={styles.sensorItem}>
-                <Text style={styles.sensorValue}>{sensorData.accelerometer.length}</Text>
-                <Text style={styles.sensorLabel}>Readings</Text>
-              </View>
-              <View style={styles.sensorItem}>
-                <Text style={styles.sensorValue}>{stats.backspaceCount}</Text>
-                <Text style={styles.sensorLabel}>Backspaces</Text>
-              </View>
-            </View>
-          </View>
-        )}
-
+       
         {/* Text Display */}
         <View style={styles.textContainer}>
           <View style={styles.textDisplay}>
@@ -893,10 +1088,65 @@ export default function TypingGameScreen() {
           )}
         </View>
 
+         {/* ✅ Device & Network Info Display */}
+        {gameStarted && (
+          <View style={styles.deviceInfoContainer}>
+            <Text style={styles.deviceInfoTitle}>Device & Network Information</Text>
+            <View style={styles.deviceInfoGrid}>
+              <View style={styles.deviceInfoItem}>
+                <Text style={styles.deviceInfoLabel}>Device</Text>
+                <Text style={styles.deviceInfoValue}>
+                  {deviceMetrics.deviceInfo.brand} {deviceMetrics.deviceInfo.model}
+                </Text>
+              </View>
+              <View style={styles.deviceInfoItem}>
+                <Text style={styles.deviceInfoLabel}>IP Address</Text>
+                <Text style={styles.deviceInfoValue}>{deviceMetrics.ipAddress}</Text>
+              </View>
+              <View style={styles.deviceInfoItem}>
+                <Text style={styles.deviceInfoLabel}>Network</Text>
+                <Text style={styles.deviceInfoValue}>
+                  {deviceMetrics.networkInfo.type} 
+                  {deviceMetrics.networkInfo.isConnected ? ' ✓' : ' ✗'}
+                </Text>
+              </View>
+              <View style={styles.deviceInfoItem}>
+                <Text style={styles.deviceInfoLabel}>GPS</Text>
+                <Text style={styles.deviceInfoValue}>
+                  {deviceMetrics.gpsLocation 
+                    ? `${deviceMetrics.gpsLocation.latitude.toFixed(4)}, ${deviceMetrics.gpsLocation.longitude.toFixed(4)}`
+                    : 'Not available'
+                  }
+                </Text>
+              </View>
+              <View style={styles.deviceInfoItem}>
+                <Text style={styles.deviceInfoLabel}>Battery</Text>
+                <Text style={styles.deviceInfoValue}>
+                  {Math.round(deviceMetrics.deviceInfo.batteryLevel * 100)}%
+                  {deviceMetrics.deviceInfo.isCharging ? ' ⚡' : ''}
+                </Text>
+              </View>
+              <View style={styles.deviceInfoItem}>
+                <Text style={styles.deviceInfoLabel}>Swipes</Text>
+                <Text style={styles.deviceInfoValue}>
+                  {touchData.filter(t => t.type === 'swipe').length}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* ✅ Enhanced Results with new metrics */}
         {gameCompleted && (
           <View style={styles.resultsContainer}>
-            <Text style={styles.resultsTitle}>Test Complete!</Text>
+            <Text style={styles.resultsTitle}>🎉 Test Complete!</Text>
+            
+            {/* Success message */}
+            <View style={styles.successMessage}>
+              <Text style={styles.successText}>
+                Great job! Your behavioral profile has been analyzed and saved securely.
+              </Text>
+            </View>
             
             <View style={styles.resultGrid}>
               <View style={styles.resultItem}>
@@ -924,16 +1174,17 @@ export default function TypingGameScreen() {
               </View>
               
               <View style={styles.resultItem}>
-                <Text style={styles.resultLabel}>Error Rate</Text>
-                <Text style={styles.resultValue}>{stats.errorRate}%</Text>
+                <Text style={styles.resultLabel}>Keyboard Latency</Text>
+                <Text style={styles.resultValue}>{stats.averageKeyboardLatency}ms</Text>
               </View>
               
               <View style={styles.resultItem}>
-                <Text style={styles.resultLabel}>Tap Rhythm</Text>
-                <Text style={styles.resultValue}>{stats.averageTapRhythm}ms</Text>
+                <Text style={styles.resultLabel}>Error Rate</Text>
+                <Text style={styles.resultValue}>{stats.errorRate}%</Text>
               </View>
             </View>
 
+            {/* Action buttons for user navigation */}
             <View style={styles.actionButtons}>
               <TouchableOpacity style={styles.continueButton} onPress={() => router.replace('/(tabs)')}>
                 <LinearGradient
@@ -946,8 +1197,22 @@ export default function TypingGameScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.playAgainButton} onPress={resetGame}>
-                <Text style={styles.playAgainText}>Try Again</Text>
+                <LinearGradient
+                  colors={['#FFB600', '#FF9500']}
+                  style={styles.buttonGradient}
+                >
+                  <Ionicons name="refresh" size={20} color="#fff" />
+                  <Text style={styles.buttonText}>Try Again</Text>
+                </LinearGradient>
               </TouchableOpacity>
+            </View>
+
+            {/* Additional info */}
+            <View style={styles.infoSection}>
+              <Text style={styles.infoText}>
+                Your typing patterns and device metrics have been analyzed for enhanced security. 
+                You can now proceed to the banking app or take the test again.
+              </Text>
             </View>
           </View>
         )}
@@ -1029,7 +1294,7 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
-  sensorContainer: {
+  deviceInfoContainer: {
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
@@ -1040,29 +1305,31 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  sensorTitle: {
+  deviceInfoTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
     marginBottom: 12,
     textAlign: 'center',
   },
-  sensorStats: {
+  deviceInfoGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
-  sensorItem: {
-    alignItems: 'center',
+  deviceInfoItem: {
+    width: '48%',
+    marginBottom: 12,
   },
-  sensorValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#019EEC',
-  },
-  sensorLabel: {
+  deviceInfoLabel: {
     fontSize: 12,
     color: '#666',
-    marginTop: 4,
+    marginBottom: 2,
+  },
+  deviceInfoValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
   },
   textContainer: {
     backgroundColor: '#fff',
@@ -1174,6 +1441,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
+  successMessage: {
+    backgroundColor: '#E8F5E8',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  successText: {
+    color: '#2E7D32',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   resultGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1205,18 +1486,31 @@ const styles = StyleSheet.create({
   continueButton: {
     borderRadius: 12,
     overflow: 'hidden',
+    shadowColor: '#019EEC',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   playAgainButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: '#019EEC',
     borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
+    overflow: 'hidden',
+    shadowColor: '#FFB600',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  playAgainText: {
-    color: '#019EEC',
-    fontSize: 16,
-    fontWeight: '600',
+  infoSection: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    padding: 16,
+    marginTop: 20,
+  },
+  infoText: {
+    color: '#666',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
