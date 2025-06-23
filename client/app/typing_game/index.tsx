@@ -169,8 +169,20 @@ export default function TypingGameScreen() {
     }
   }, [userInput, currentText]);
 
+  const initializeSensors = async () => {
+    try {
+      const [accelAvailable, gyroAvailable, magnetAvailable] = await Promise.all([
+        Accelerometer.isAvailableAsync(),
+        Gyroscope.isAvailableAsync(),
+        Magnetometer.isAvailableAsync()
+      ]);
+
+      console.log('Sensor availability:', { accelAvailable, gyroAvailable, magnetAvailable });
+
+      let sensorDataCount = { accelerometer: 0, gyroscope: 0, magnetometer: 0 };
+
       if (accelAvailable) {
-        Accelerometer.setUpdateInterval(200);
+        Accelerometer.setUpdateInterval(10000);
         const accelerometerSub = Accelerometer.addListener(({ x, y, z }) => {
           sensorDataCount.accelerometer++;
           console.log('Accelerometer data:', { x, y, z });
@@ -183,7 +195,7 @@ export default function TypingGameScreen() {
       }
 
       if (gyroAvailable) {
-        Gyroscope.setUpdateInterval(200);
+        Gyroscope.setUpdateInterval(10000);
         const gyroscopeSub = Gyroscope.addListener(({ x, y, z }) => {
           sensorDataCount.gyroscope++;
           console.log('Gyroscope data:', { x, y, z });
@@ -196,7 +208,7 @@ export default function TypingGameScreen() {
       }
 
       if (magnetAvailable) {
-        Magnetometer.setUpdateInterval(200);
+        Magnetometer.setUpdateInterval(10000);
         const magnetometerSub = Magnetometer.addListener(({ x, y, z }) => {
           sensorDataCount.magnetometer++;
           console.log('Magnetometer data:', { x, y, z });
