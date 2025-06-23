@@ -169,18 +169,6 @@ export default function TypingGameScreen() {
     }
   }, [userInput, currentText]);
 
-  const initializeSensors = async () => {
-    try {
-      const [accelAvailable, gyroAvailable, magnetAvailable] = await Promise.all([
-        Accelerometer.isAvailableAsync(),
-        Gyroscope.isAvailableAsync(),
-        Magnetometer.isAvailableAsync()
-      ]);
-
-      console.log('Sensor availability:', { accelAvailable, gyroAvailable, magnetAvailable });
-
-      let sensorDataCount = { accelerometer: 0, gyroscope: 0, magnetometer: 0 };
-
       if (accelAvailable) {
         Accelerometer.setUpdateInterval(200);
         const accelerometerSub = Accelerometer.addListener(({ x, y, z }) => {
