@@ -10,7 +10,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Image,
   ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
