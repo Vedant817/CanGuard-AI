@@ -1,4 +1,3 @@
-// app/auth.tsx
 import React, { useState } from 'react';
 import {
   View,
@@ -21,60 +20,91 @@ import { saveToken } from '@/utils/token';
 export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mpin, setMpin] = useState('');
+  const [confirmMpin, setConfirmMpin] = useState('');
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
- const handleAuth = async () => {
-  if (!email || !password) {
-    Alert.alert('Error', 'Please fill in all fields');
-    return;
-  }
-
-  if (!email.includes('@')) {
-    Alert.alert('Error', 'Please enter a valid email address');
-    return;
-  }
-
-  if (password.length < 6) {
-    Alert.alert('Error', 'Password must be at least 6 characters');
-    return;
-  }
-
-  setLoading(true);
-
-  const endpoint = isLogin
-    ? 'http://localhost:3001/api/auth/login'
-    : 'http://localhost:3001/api/auth/register';
-
-  try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data?.error || 'Authentication failed');
+  const handleAuth = async () => {
+    if (!email || !password) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
     }
 
-    console.log('Success:', data);
-    await saveToken(data.token);
+    if (!email.includes('@')) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
 
-    // Redirect to typing speed page instead of tabs
-    router.replace('/typing-game');
-  } catch (error: any) {
-    console.error(error);
-    Alert.alert('Error', error.message || 'Something went wrong');
-  } finally {
-    setLoading(false);
-  }
-};
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
 
+    // ✅ MPIN validation for registration
+    if (!isLogin) {
+      if (!mpin || mpin.length !== 6) {
+        Alert.alert('Error', 'Please enter a 6-digit MPIN');
+        return;
+      }
+
+      if (mpin !== confirmMpin) {
+        Alert.alert('Error', 'MPIN and confirm MPIN do not match');
+        return;
+      }
+
+      // Check for weak MPIN patterns
+      if (mpin === '123456' || mpin === '000000' || mpin === '111111') {
+        Alert.alert('Error', 'Please choose a stronger MPIN');
+        return;
+      }
+    }
+
+    setLoading(true);
+
+    const endpoint = isLogin
+      ? 'http://192.168.1.100:3001/api/auth/login'
+      : 'http://192.168.1.100:3001/api/auth/register';
+
+    try {
+      const requestBody = isLogin 
+        ? { email, password }
+        : { email, password, mpin }; // ✅ Include MPIN for registration
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.message || 'Authentication failed');
+      }
+
+      console.log('Success:', data);
+      
+      if (isLogin) {
+        // ✅ For login, go to MPIN validation page
+        await saveToken(data.token);
+        router.replace('/mpin-validation');
+      } else {
+        // ✅ For registration, go directly to typing game
+        await saveToken(data.token);
+        router.replace('/typing-game');
+      }
+      
+    } catch (error: any) {
+      console.error(error);
+      Alert.alert('Error', error.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView 
@@ -170,6 +200,65 @@ export default function AuthScreen() {
                 </View>
               </View>
 
+              {/* ✅ MPIN Input for Registration */}
+              {!isLogin && (
+                <>
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.label}>Create 6-Digit MPIN</Text>
+                    <View style={styles.inputWrapper}>
+                      <Ionicons 
+                        name="keypad-outline" 
+                        size={20} 
+                        color="#666" 
+                        style={styles.inputIcon}
+                      />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Enter 6-digit MPIN"
+                        placeholderTextColor="#999"
+                        value={mpin}
+                        onChangeText={(text) => {
+                          // Only allow numbers and limit to 6 digits
+                          const numericText = text.replace(/[^0-9]/g, '').slice(0, 6);
+                          setMpin(numericText);
+                        }}
+                        keyboardType="numeric"
+                        secureTextEntry={true}
+                        maxLength={6}
+                      />
+                    </View>
+                    <Text style={styles.helperText}>
+                      MPIN will be used for transaction authentication
+                    </Text>
+                  </View>
+
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.label}>Confirm MPIN</Text>
+                    <View style={styles.inputWrapper}>
+                      <Ionicons 
+                        name="checkmark-circle-outline" 
+                        size={20} 
+                        color="#666" 
+                        style={styles.inputIcon}
+                      />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Re-enter 6-digit MPIN"
+                        placeholderTextColor="#999"
+                        value={confirmMpin}
+                        onChangeText={(text) => {
+                          const numericText = text.replace(/[^0-9]/g, '').slice(0, 6);
+                          setConfirmMpin(numericText);
+                        }}
+                        keyboardType="numeric"
+                        secureTextEntry={true}
+                        maxLength={6}
+                      />
+                    </View>
+                  </View>
+                </>
+              )}
+
               {/* Forgot Password */}
               {isLogin && (
                 <TouchableOpacity style={styles.forgotPassword}>
@@ -210,7 +299,11 @@ export default function AuthScreen() {
               {/* Switch Auth Mode */}
               <TouchableOpacity 
                 style={styles.switchButton}
-                onPress={() => setIsLogin(!isLogin)}
+                onPress={() => {
+                  setIsLogin(!isLogin);
+                  setMpin('');
+                  setConfirmMpin('');
+                }}
               >
                 <Text style={styles.switchText}>
                   {isLogin 
@@ -427,5 +520,11 @@ const styles = StyleSheet.create({
   securityIcons: {
     flexDirection: 'row',
     gap: 12,
+  },
+    helperText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
 });
