@@ -12,8 +12,7 @@ connectDB();
 app.use(cors());
 app.use(express.json());
 
-app.use('/api/auth', authRoutes);
-app.use('/api/behavior', require('./routes/typing')); 
+app.use('/api/auth', authRoutes); 
 
 app.get('/', (req, res) => {
   res.send('Auth API Running');
