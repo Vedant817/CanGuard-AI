@@ -19,13 +19,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import * as Device from 'expo-device';
 import * as Network from 'expo-network';
-// ❌ Commented out sensor imports
-// import {
-//   Accelerometer,
-//   Gyroscope,
-//   Magnetometer,
-//   DeviceMotion
-// } from 'expo-sensors';
+import * as SecureStore from 'expo-secure-store';
+import 'react-native-get-random-values';
+import { v4 as uuidv4 } from 'uuid';
 
 const { width } = Dimensions.get('window');
 
@@ -95,6 +91,7 @@ interface SensorData {
 interface DeviceMetrics {
   keyboardLatency: number[];
   ipAddress: string;
+  deviceUUID: string; // ✅ Added UUID tracking
   gpsLocation: {
     latitude: number;
     longitude: number;
@@ -168,10 +165,11 @@ export default function TypingGameScreen() {
     stabilityScore: 100
   });
   
-  // ✅ Added device metrics state
+  // ✅ Added device metrics state with UUID
   const [deviceMetrics, setDeviceMetrics] = useState<DeviceMetrics>({
     keyboardLatency: [],
     ipAddress: '',
+    deviceUUID: '', // ✅ Added UUID field
     gpsLocation: null,
     deviceInfo: {
       brand: '',
@@ -234,15 +232,45 @@ export default function TypingGameScreen() {
     }
   }, [userInput, currentText]);
 
-  // ✅ Device information collection function
+  // ✅ UUID generation and retrieval function
+  const getOrCreateDeviceUUID = async (): Promise<string> => {
+    try {
+      // Try to get existing UUID from SecureStore
+      let deviceUUID = await SecureStore.getItemAsync('secure_deviceid');
+      
+      if (deviceUUID) {
+        // Parse the stored UUID (it's stored as JSON string)
+        deviceUUID = JSON.parse(deviceUUID);
+        console.log('Retrieved existing UUID:', deviceUUID);
+      } else {
+        // Generate new UUID if none exists
+        deviceUUID = uuidv4();
+        await SecureStore.setItemAsync('secure_deviceid', JSON.stringify(deviceUUID));
+        console.log('Generated new UUID:', deviceUUID);
+      }
+      
+      return deviceUUID;
+    } catch (error) {
+      console.error('Error handling device UUID:', error);
+      // Fallback to generating a new UUID
+      const fallbackUUID = uuidv4();
+      console.log('Using fallback UUID:', fallbackUUID);
+      return fallbackUUID;
+    }
+  };
+
+  // ✅ Enhanced device information collection function with UUID
   const collectDeviceInfo = async () => {
     try {
+      // ✅ Get or create device UUID
+      const deviceUUID = await getOrCreateDeviceUUID();
+
       // Get device information
       const deviceInfo = {
         brand: Device.brand || 'Unknown',
         model: Device.modelName || 'Unknown',
         systemVersion: Device.osVersion || 'Unknown',
-        uniqueId: Device.osInternalBuildId || 'Unknown',
+        uniqueId: deviceUUID, // ✅ Use our generated UUID
         deviceType: Device.deviceType?.toString() || 'Unknown',
         totalMemory: 0, // Will be updated if available
         usedMemory: 0, // Will be updated if available
@@ -293,13 +321,15 @@ export default function TypingGameScreen() {
         networkInfo,
         ipAddress,
         gpsLocation,
+        deviceUUID, // ✅ Store the UUID
       }));
 
-      console.log('Device metrics collected:', {
+      console.log('Device metrics collected with UUID:', {
         deviceInfo,
         networkInfo,
         ipAddress,
         gpsLocation,
+        deviceUUID, // ✅ Log the UUID
       });
 
     } catch (error) {
@@ -309,66 +339,7 @@ export default function TypingGameScreen() {
 
   const initializeSensors = async () => {
     try {
-      // ❌ Commented out sensor availability checks
-      // const [accelAvailable, gyroAvailable, magnetAvailable] = await Promise.all([
-      //   Accelerometer.isAvailableAsync(),
-      //   Gyroscope.isAvailableAsync(),
-      //   Magnetometer.isAvailableAsync()
-      // ]);
-
-      // console.log('Sensor availability:', { accelAvailable, gyroAvailable, magnetAvailable });
-
-      // let sensorDataCount = { accelerometer: 0, gyroscope: 0, magnetometer: 0 };
-
-      // ❌ Commented out accelerometer tracking
-      // if (accelAvailable) {
-      //   Accelerometer.setUpdateInterval(10000);
-      //   const accelerometerSub = Accelerometer.addListener(({ x, y, z }) => {
-      //     sensorDataCount.accelerometer++;
-      //     console.log('Accelerometer data:', { x, y, z });
-      //     setSensorData(prev => ({
-      //       ...prev,
-      //       accelerometer: [...prev.accelerometer.slice(-50), { x, y, z, timestamp: Date.now() }]
-      //     }));
-      //   });
-      //   sensorSubscriptions.current.push(accelerometerSub);
-      // }
-
-      // ❌ Commented out gyroscope tracking
-      // if (gyroAvailable) {
-      //   Gyroscope.setUpdateInterval(10000);
-      //   const gyroscopeSub = Gyroscope.addListener(({ x, y, z }) => {
-      //     sensorDataCount.gyroscope++;
-      //     console.log('Gyroscope data:', { x, y, z });
-      //     setSensorData(prev => ({
-      //       ...prev,
-      //       gyroscope: [...prev.gyroscope.slice(-50), { x, y, z, timestamp: Date.now() }]
-      //     }));
-      //   });
-      //   sensorSubscriptions.current.push(gyroscopeSub);
-      // }
-
-      // ❌ Commented out magnetometer tracking
-      // if (magnetAvailable) {
-      //   Magnetometer.setUpdateInterval(10000);
-      //   const magnetometerSub = Magnetometer.addListener(({ x, y, z }) => {
-      //     sensorDataCount.magnetometer++;
-      //     console.log('Magnetometer data:', { x, y, z });
-      //     setSensorData(prev => ({
-      //       ...prev,
-      //       magnetometer: [...prev.magnetometer.slice(-50), { x, y, z, timestamp: Date.now() }]
-      //     }));
-      //   });
-      //   sensorSubscriptions.current.push(magnetometerSub);
-      // }
-
-      // ❌ Commented out sensor data logging
-      // setTimeout(() => {
-      //   console.log('Sensor data count after 15 seconds:', sensorDataCount);
-      // }, 15000);
-
       console.log('Sensor tracking disabled - focusing on typing and device metrics only');
-
     } catch (error) {
       console.error('Error initializing sensors:', error);
     }
@@ -424,9 +395,6 @@ export default function TypingGameScreen() {
     
     // ✅ Collect device information when game starts
     collectDeviceInfo();
-    
-    // ❌ Commented out sensor initialization
-    // initializeSensors();
     
     inputRef.current?.focus();
   };
@@ -555,13 +523,6 @@ export default function TypingGameScreen() {
       }
     });
 
-    // ❌ Commented out sensor-based movement patterns
-    // const movementPatterns = sensorData.accelerometer.map(reading => 
-    //   Math.sqrt(reading.x * reading.x + reading.y * reading.y + reading.z * reading.z)
-    // );
-    
-    // ❌ Commented out device stability calculation
-    // const stabilityScore = calculateDeviceStability();
     const concentrationLevel = calculateConcentrationLevel();
 
     // Enhanced touch metrics
@@ -587,7 +548,6 @@ export default function TypingGameScreen() {
         correctionPatterns: calculateCorrectionPatterns()
       },
       sensorData: {
-        // ❌ Commented out sensor data, using default values
         accelerometer: [],
         gyroscope: [],
         magnetometer: [],
@@ -608,7 +568,7 @@ export default function TypingGameScreen() {
         swipeFrequency: swipeData.length,
         averageSwipeVelocity
       },
-      deviceMetrics // ✅ Include device metrics
+      deviceMetrics // ✅ Include device metrics with UUID
     };
   };
 
@@ -639,18 +599,6 @@ export default function TypingGameScreen() {
   const calculateCorrectionPatterns = (): number => {
     return keystrokeData.filter(k => k.isBackspace).length;
   };
-
-  // ❌ Commented out device stability calculation
-  // const calculateDeviceStability = (): number => {
-  //   if (sensorData.accelerometer.length < 10) return 100;
-  //   
-  //   const movements = sensorData.accelerometer.map(reading => 
-  //     Math.sqrt(reading.x * reading.x + reading.y * reading.y + reading.z * reading.z)
-  //   );
-  //   
-  //   const variance = calculateVariance(movements);
-  //   return Math.max(0, 100 - (variance * 10));
-  // };
 
   const calculateConcentrationLevel = (): number => {
     const pauseCount = keystrokeData.filter((_, i, arr) => 
@@ -688,7 +636,7 @@ export default function TypingGameScreen() {
         touchData,
         behavioralMetrics,
         typingStats,
-        deviceMetrics, // ✅ Include all device metrics
+        deviceMetrics, // ✅ Include all device metrics with UUID
         latencyStats, // ✅ Include latency analysis
         sessionData: {
           timestamp: new Date().toISOString(),
@@ -713,8 +661,9 @@ export default function TypingGameScreen() {
             averageInterval: stats.averageTapRhythm,
             rhythmVariance: calculateVariance(behavioralMetrics.touchMetrics.tapRhythm)
           },
-          // ✅ Enhanced device context
+          // ✅ Enhanced device context with UUID
           deviceContext: {
+            deviceUUID: deviceMetrics.deviceUUID, // ✅ Include UUID in context
             location: deviceMetrics.gpsLocation,
             networkType: deviceMetrics.networkInfo.type,
             batteryLevel: deviceMetrics.deviceInfo.batteryLevel,
@@ -737,7 +686,7 @@ export default function TypingGameScreen() {
       const data = await response.json();
       
       if (data.success) {
-        console.log('Enhanced behavioral data with device metrics saved successfully:', data);
+        console.log('Enhanced behavioral data with UUID saved successfully:', data);
       } else {
         console.error('Failed to save behavioral data:', data.message);
       }
@@ -1042,7 +991,6 @@ export default function TypingGameScreen() {
           </View>
         )}
 
-       
         {/* Text Display */}
         <View style={styles.textContainer}>
           <View style={styles.textDisplay}>
@@ -1069,26 +1017,7 @@ export default function TypingGameScreen() {
           />
         </View>
 
-        {/* Game Controls */}
-        <View style={styles.controlsContainer}>
-          {!gameStarted ? (
-            <TouchableOpacity style={styles.startButton} onPress={startGame}>
-              <LinearGradient
-                colors={['#FFB600', '#FF9500']}
-                style={styles.buttonGradient}
-              >
-                <Ionicons name="play" size={20} color="#fff" />
-                <Text style={styles.buttonText}>Start Test</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.resetButton} onPress={resetGame}>
-              <Text style={styles.resetButtonText}>Reset</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-         {/* ✅ Device & Network Info Display */}
+        {/* ✅ Device & Network Info Display with UUID */}
         {gameStarted && (
           <View style={styles.deviceInfoContainer}>
             <Text style={styles.deviceInfoTitle}>Device & Network Information</Text>
@@ -1097,6 +1026,12 @@ export default function TypingGameScreen() {
                 <Text style={styles.deviceInfoLabel}>Device</Text>
                 <Text style={styles.deviceInfoValue}>
                   {deviceMetrics.deviceInfo.brand} {deviceMetrics.deviceInfo.model}
+                </Text>
+              </View>
+              <View style={styles.deviceInfoItem}>
+                <Text style={styles.deviceInfoLabel}>Device UUID</Text>
+                <Text style={styles.deviceInfoValue}>
+                  {deviceMetrics.deviceUUID.substring(0, 8)}...
                 </Text>
               </View>
               <View style={styles.deviceInfoItem}>
@@ -1126,15 +1061,28 @@ export default function TypingGameScreen() {
                   {deviceMetrics.deviceInfo.isCharging ? ' ⚡' : ''}
                 </Text>
               </View>
-              <View style={styles.deviceInfoItem}>
-                <Text style={styles.deviceInfoLabel}>Swipes</Text>
-                <Text style={styles.deviceInfoValue}>
-                  {touchData.filter(t => t.type === 'swipe').length}
-                </Text>
-              </View>
             </View>
           </View>
         )}
+
+        {/* Game Controls */}
+        <View style={styles.controlsContainer}>
+          {!gameStarted ? (
+            <TouchableOpacity style={styles.startButton} onPress={startGame}>
+              <LinearGradient
+                colors={['#FFB600', '#FF9500']}
+                style={styles.buttonGradient}
+              >
+                <Ionicons name="play" size={20} color="#fff" />
+                <Text style={styles.buttonText}>Start Test</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.resetButton} onPress={resetGame}>
+              <Text style={styles.resetButtonText}>Reset</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {/* ✅ Enhanced Results with new metrics */}
         {gameCompleted && (
