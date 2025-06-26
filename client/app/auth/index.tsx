@@ -95,7 +95,7 @@ export default function AuthScreen() {
       } else {
         // ✅ For registration, go directly to typing game
         await saveToken(data.token);
-        router.replace('/typing-game');
+        router.replace('/typing_game');
       }
       
     } catch (error: any) {

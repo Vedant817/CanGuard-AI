@@ -21,6 +21,11 @@ exports.saveTypingData = async (req, res) => {
     });
 
     await newBehavior.save();
+
+    await require('../models/User').findByIdAndUpdate(userId, {
+      lastBehavioralVerification: new Date()
+    });
+
     res.status(201).json({
       success: true,
       message: 'Behavioral data saved successfully',
