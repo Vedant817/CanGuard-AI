@@ -81,6 +81,8 @@ exports.register = async (req, res) => {
     });
 
     // ✅ Save user first, then generate token
+    
+    user.lastLoginVerifiedAt = new Date();
     await user.save();
     const token = generateToken(user);
 
@@ -150,6 +152,7 @@ exports.login = async (req, res) => {
 
     // ✅ Generate token
     const token = generateToken(user);
+    user.lastLoginVerifiedAt = new Date();
 
     // ✅ Improved response format
     res.status(200).json({

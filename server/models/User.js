@@ -34,6 +34,7 @@ const userSchema = new mongoose.Schema({
     default: null,
   },
   lastMpinVerifiedAt: { type: Date, default: null },
+  lastLoginVerifiedAt: { type: Date, default: null },
   deviceUUIDs: [{ type: String }],
 }, { timestamps: true });
 

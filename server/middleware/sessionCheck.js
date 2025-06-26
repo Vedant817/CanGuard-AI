@@ -1,6 +1,6 @@
 const THREE_WEEKS_MS = 1000 * 60 * 60 * 24 * 21;
 
-module.exports = (requireTyping = true, requireMpin = true) => {
+module.exports = (requireTyping = true, requireLogin = true) => {
   return async (req, res, next) => {
     const user = req.user;
     const now = Date.now();
@@ -11,10 +11,10 @@ module.exports = (requireTyping = true, requireMpin = true) => {
         now - new Date(user.lastBehavioralVerification).getTime() >
           THREE_WEEKS_MS);
 
-    const needsMpin =
-      requireMpin &&
-      (!user.lastMpinVerifiedAt ||
-        now - new Date(user.lastMpinVerifiedAt).getTime() > THREE_WEEKS_MS);
+    const needsLogin =
+      requireLogin &&
+      (!user.lastLoginVerifiedAt ||
+        now - new Date(user.lastLoginVerifiedAt).getTime() > THREE_WEEKS_MS);
 
     if (needsTyping) {
       return res
@@ -26,13 +26,13 @@ module.exports = (requireTyping = true, requireMpin = true) => {
         });
     }
 
-    if (needsMpin) {
+    if (needsLogin) {
       return res
         .status(403)
         .json({
           success: false,
-          message: "MPIN verification required",
-          step: "mpin",
+          message: "Login verification required",
+          step: "Login",
         });
     }
 

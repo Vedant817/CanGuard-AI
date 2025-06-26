@@ -11,14 +11,14 @@ router.get('/session-status', authMiddleware, (req, res) => {
   const needsTyping = !user.lastBehavioralVerification ||
     now - new Date(user.lastBehavioralVerification).getTime() > THREE_WEEKS;
 
-  const needsMpin = !user.lastMpinVerifiedAt ||
-    now - new Date(user.lastMpinVerifiedAt).getTime() > THREE_WEEKS;
+  const needsLogin = !user.lastLoginVerifiedAt ||
+    now - new Date(user.lastLoginVerifiedAt).getTime() > THREE_WEEKS;
 
   res.json({
     success: true,
     session: {
       needsTyping,
-      needsMpin
+      needsLogin
     }
   });
 });

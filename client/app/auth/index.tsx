@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState,useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -28,92 +29,124 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-const API = 'https://e170-2405-201-500c-50c8-d0a8-316d-2852-6723.ngrok-free.app/api';
+  const API = 'https://e170-2405-201-500c-50c8-d0a8-316d-2852-6723.ngrok-free.app/api';
 
-const handleAuth = async () => {
-  if (!email || !password) {
-    Alert.alert('Error', 'Please fill in all fields');
-    return;
-  }
+  // ✅ Auto-redirect if token already exists
+useEffect(() => {
+  (async () => {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) return;
 
-  if (!email.includes('@')) {
-    Alert.alert('Error', 'Please enter a valid email address');
-    return;
-  }
+    try {
+      // Call session-status endpoint as fast as possible
+      const res = await fetch('https://e170-2405-201-500c-50c8-d0a8-316d-2852-6723.ngrok-free.app/api/user/session-status', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await res.json();
 
-  if (password.length < 6) {
-    Alert.alert('Error', 'Password must be at least 6 characters');
-    return;
-  }
+      if (!data.success || !data.session) return;
 
-  if (!isLogin) {
-    if (!mpin || mpin.length !== 6) {
-      Alert.alert('Error', 'Please enter a 6-digit MPIN');
-      return;
-    }
+      const { needsTyping, needsLogin } = data.session;
 
-    if (mpin !== confirmMpin) {
-      Alert.alert('Error', 'MPIN and confirm MPIN do not match');
-      return;
-    }
-
-    if (['123456', '000000', '111111'].includes(mpin)) {
-      Alert.alert('Error', 'Please choose a stronger MPIN');
-      return;
-    }
-  }
-
-  setLoading(true);
-
-  const endpoint = isLogin
-    ? `${API}/auth/login`
-    : `${API}/auth/register`;
-
-  try {
-    const requestBody = isLogin
-      ? { email, password }
-      : {username,email, password, mpin };
-
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) throw new Error(data?.message || 'Authentication failed');
-
-    const token = isLogin ? data.data.token : data.data.token;
-
-    if (!token) {
-      throw new Error('No token received from server');
-    }
-
-    await saveToken(token);
-    console.log('✅ Token:', token);
-
-    if (isLogin) {
-      const session = await getSessionStatus(token);
-
-      if (session.needsTyping) {
+      if (needsTyping) {
         router.replace('/typing_game');
-      } else if (session.needsMpin) {
-        router.replace('/mpin-validation');
+      } else if (needsLogin) {
+        await AsyncStorage.removeItem('token');
+        router.replace('/auth');
       } else {
-        router.replace('/main_menu'); // Main menu route
+        router.replace('/mpin-validation');
       }
-    } else {
-      router.replace('/typing_game');
+    } catch (err) {
+      console.log('⚠️ Session check failed:', err.message);
+    }
+  })();
+}, []);
+
+
+  const handleAuth = async () => {
+    if (!email || !password) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
     }
 
-  } catch (error: any) {
-    console.error('❌ Auth Error:', error);
-    Alert.alert('Error', error.message || 'Something went wrong');
-  } finally {
-    setLoading(false);
-  }
-};
+    if (!email.includes('@')) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
+
+    if (!isLogin) {
+      if (!mpin || mpin.length !== 6) {
+        Alert.alert('Error', 'Please enter a 6-digit MPIN');
+        return;
+      }
+
+      if (mpin !== confirmMpin) {
+        Alert.alert('Error', 'MPIN and confirm MPIN do not match');
+        return;
+      }
+
+      if (['123456', '000000', '111111'].includes(mpin)) {
+        Alert.alert('Error', 'Please choose a stronger MPIN');
+        return;
+      }
+    }
+
+    setLoading(true);
+
+    const endpoint = isLogin
+      ? `${API}/auth/login`
+      : `${API}/auth/register`;
+
+    try {
+      const requestBody = isLogin
+        ? { email, password }
+        : { username, email, password, mpin };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data?.message || 'Authentication failed');
+
+      const token = data?.data?.token || data?.token;
+      if (!token) throw new Error('No token received from server');
+
+      await saveToken(token);
+      console.log('✅ Token:', token);
+
+      if (isLogin) {
+        const session = await getSessionStatus(token);
+        if (session.needsTyping) {
+          router.replace('/typing_game');
+        } else if (session.needsLogin) {
+          Alert.alert('Session Expired', 'Please sign in again.');
+          router.replace('/auth');
+        } else {
+          router.replace('/mpin-validation');
+        }
+      } else {
+        router.replace('/typing_game');
+      }
+
+    } catch (error: any) {
+      console.error('❌ Auth Error:', error);
+      Alert.alert('Error', error.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  };
 
 
   return (
