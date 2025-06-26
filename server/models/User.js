@@ -22,6 +22,15 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  age:{
+    type: Number,
+    required: true
+  },
+  disability: {
+    type: String,
+    required: true,
+    enum: ['None', 'Visual', 'Hearing', 'Motor', 'Cognitive'],
+  },
 }, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);
