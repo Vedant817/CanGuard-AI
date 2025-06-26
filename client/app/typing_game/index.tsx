@@ -260,82 +260,76 @@ export default function TypingGameScreen() {
   };
 
   // ✅ Enhanced device information collection function with UUID
-  const collectDeviceInfo = async () => {
+const collectDeviceInfo = async (): Promise<DeviceMetrics | null> => {
+  try {
+    const deviceUUID = await getOrCreateDeviceUUID();
+
+    // Get device info
+    const deviceInfo = {
+      brand: Device.brand || 'Unknown',
+      model: Device.modelName || 'Unknown',
+      systemVersion: Device.osVersion || 'Unknown',
+      uniqueId: deviceUUID,
+      deviceType: Device.deviceType?.toString() || 'Unknown',
+      totalMemory: 0, // Optional: Update with memory module
+      usedMemory: 0,
+      batteryLevel: 1,
+      isCharging: false
+    };
+
+    // Get network info
+    const networkState = await Network.getNetworkStateAsync();
+    const networkInfo = {
+      type: networkState.type || 'unknown',
+      isConnected: networkState.isConnected ?? false,
+      isInternetReachable: networkState.isInternetReachable ?? false
+    };
+
+    // Get IP address
+    let ipAddress = 'Unknown';
     try {
-      // ✅ Get or create device UUID
-      const deviceUUID = await getOrCreateDeviceUUID();
-
-      // Get device information
-      const deviceInfo = {
-        brand: Device.brand || 'Unknown',
-        model: Device.modelName || 'Unknown',
-        systemVersion: Device.osVersion || 'Unknown',
-        uniqueId: deviceUUID, // ✅ Use our generated UUID
-        deviceType: Device.deviceType?.toString() || 'Unknown',
-        totalMemory: 0, // Will be updated if available
-        usedMemory: 0, // Will be updated if available
-        batteryLevel: 1, // Default to 100%
-        isCharging: false,
-      };
-
-      // Get network information
-      const networkState = await Network.getNetworkStateAsync();
-      const networkInfo = {
-        type: networkState.type || 'unknown',
-        isConnected: networkState.isConnected || false,
-        isInternetReachable: networkState.isInternetReachable || false,
-      };
-
-      // Get IP address
-      let ipAddress = '';
-      try {
-        const ipInfo = await Network.getIpAddressAsync();
-        ipAddress = ipInfo || 'Unknown';
-      } catch (error) {
-        console.log('Could not get IP address:', error);
-        ipAddress = 'Unknown';
-      }
-
-      // Get GPS location
-      let gpsLocation = null;
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const location = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.High,
-          });
-          gpsLocation = {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            accuracy: location.coords.accuracy || 0,
-            timestamp: location.timestamp,
-          };
-        }
-      } catch (error) {
-        console.log('Could not get GPS location:', error);
-      }
-
-      setDeviceMetrics(prev => ({
-        ...prev,
-        deviceInfo,
-        networkInfo,
-        ipAddress,
-        gpsLocation,
-        deviceUUID, // ✅ Store the UUID
-      }));
-
-      console.log('Device metrics collected with UUID:', {
-        deviceInfo,
-        networkInfo,
-        ipAddress,
-        gpsLocation,
-        deviceUUID, // ✅ Log the UUID
-      });
-
+      const ip = await Network.getIpAddressAsync();
+      ipAddress = ip || 'Unknown';
     } catch (error) {
-      console.error('Error collecting device info:', error);
+      console.warn('IP address fetch failed:', error);
     }
-  };
+
+    // Get GPS location
+    let gpsLocation = null;
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        gpsLocation = {
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+          accuracy: loc.coords.accuracy || 0,
+          timestamp: loc.timestamp
+        };
+      }
+    } catch (error) {
+      console.warn('GPS location fetch failed:', error);
+    }
+
+    const deviceMetrics: DeviceMetrics = {
+      deviceUUID,
+      ipAddress,
+      deviceInfo,
+      networkInfo,
+      gpsLocation,
+      keyboardLatency: [] // Add this line to satisfy the DeviceMetrics interface
+    };
+
+    console.log('📱 Collected Device Metrics:', deviceMetrics);
+
+    return deviceMetrics;
+
+  } catch (err) {
+    console.error('❌ Error collecting device info:', err);
+    return null;
+  }
+};
+
 
   const initializeSensors = async () => {
     try {
@@ -407,11 +401,11 @@ export default function TypingGameScreen() {
     
     cleanupSensors();
     
-    const calculatedStats = calculateComprehensiveStats(endTime);
+    const calculatedStats =  calculateComprehensiveStats(endTime);
     setStats(calculatedStats);
     
-    const behavioralMetrics = analyzeBehavioralPatterns();
-    await saveBehavioralData(behavioralMetrics, calculatedStats);
+    const deviceMetrics = await collectDeviceInfo();
+    await saveBehavioralData(calculatedStats,deviceMetrics);
     
     inputRef.current?.blur();
 
@@ -608,92 +602,72 @@ export default function TypingGameScreen() {
     const maxPauses = keystrokeData.length / 10;
     return Math.max(0, 100 - ((pauseCount / maxPauses) * 100));
   };
-
-  const saveBehavioralData = async (behavioralMetrics: BehavioralMetrics, typingStats: TypingStats) => {
-    try {
-      const token = await AsyncStorage.getItem('authToken');
-      if (!token) {
-        console.log('No auth token found');
-        return;
-      }
-
-      // ✅ Calculate latency statistics
-      const latencyStats = {
-        averageKeyboardLatency: deviceMetrics.keyboardLatency.length > 0 
-          ? deviceMetrics.keyboardLatency.reduce((a, b) => a + b, 0) / deviceMetrics.keyboardLatency.length
-          : 0,
-        minLatency: deviceMetrics.keyboardLatency.length > 0 
-          ? Math.min(...deviceMetrics.keyboardLatency)
-          : 0,
-        maxLatency: deviceMetrics.keyboardLatency.length > 0 
-          ? Math.max(...deviceMetrics.keyboardLatency)
-          : 0,
-        latencyVariance: calculateVariance(deviceMetrics.keyboardLatency),
-      };
-
-      const enhancedBehavioralData = {
-        keystrokeData,
-        touchData,
-        behavioralMetrics,
-        typingStats,
-        deviceMetrics, // ✅ Include all device metrics with UUID
-        latencyStats, // ✅ Include latency analysis
-        sessionData: {
-          timestamp: new Date().toISOString(),
-          textLength: currentText.length,
-          completionTime: (endTime - startTime) / 1000,
-          // ✅ Enhanced metrics for backend
-          keyHoldTimeStats: {
-            average: stats.averageKeyHoldTime,
-            variance: calculateVariance(keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime)),
-            min: keystrokeData.filter(k => !k.isBackspace).length > 0 ? Math.min(...keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime)) : 0,
-            max: keystrokeData.filter(k => !k.isBackspace).length > 0 ? Math.max(...keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime)) : 0
-          },
-          flightTimeStats: {
-            average: stats.averageFlightTime,
-            variance: calculateVariance(keystrokeData.filter(k => k.flightTime > 0).map(k => k.flightTime)),
-          },
-          swipeAnalysis: {
-            totalSwipes: behavioralMetrics.touchMetrics.swipeFrequency,
-            averageSwipeVelocity: behavioralMetrics.touchMetrics.averageSwipeVelocity
-          },
-          tapRhythmStats: {
-            averageInterval: stats.averageTapRhythm,
-            rhythmVariance: calculateVariance(behavioralMetrics.touchMetrics.tapRhythm)
-          },
-          // ✅ Enhanced device context with UUID
-          deviceContext: {
-            deviceUUID: deviceMetrics.deviceUUID, // ✅ Include UUID in context
-            location: deviceMetrics.gpsLocation,
-            networkType: deviceMetrics.networkInfo.type,
-            batteryLevel: deviceMetrics.deviceInfo.batteryLevel,
-            ipAddress: deviceMetrics.ipAddress,
-            deviceBrand: deviceMetrics.deviceInfo.brand,
-            deviceModel: deviceMetrics.deviceInfo.model,
-          }
-        }
-      };
-
-      const response = await fetch('http://192.168.1.100:3001/api/behavior/typing', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(enhancedBehavioralData)
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        console.log('Enhanced behavioral data with UUID saved successfully:', data);
-      } else {
-        console.error('Failed to save behavioral data:', data.message);
-      }
-    } catch (error) {
-      console.error('Error saving behavioral data:', error);
+const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) {
+      console.log('❌ No auth token found');
+      return;
     }
-  };
+    const sessionData = {
+      deviceMetrics: {
+        deviceUUID: deviceMetrics.deviceUUID,
+        ipAddress: deviceMetrics.ipAddress,
+        gpsLocation: {
+          latitude: deviceMetrics.gpsLocation?.latitude || 0,
+          longitude: deviceMetrics.gpsLocation?.longitude || 0,
+          accuracy: deviceMetrics.gpsLocation?.accuracy || 0,
+          timestamp: new Date(deviceMetrics.gpsLocation?.timestamp || Date.now()).toISOString()
+        },
+        deviceInfo: deviceMetrics.deviceInfo,
+        networkInfo: deviceMetrics.networkInfo
+      },
+      typingStats: {
+        wpm: typingStats.wpm || 0,
+        accuracy: typingStats.accuracy || 0,
+        totalTime: typingStats.totalTime || 0,
+        totalWords: typingStats.totalWords || 0,
+        typingSpeed: typingStats.typingSpeed || 0,
+        errorRate: typingStats.errorRate || 0,
+        correctChars: typingStats.correctChars || 0,
+        averageKeyHoldTime: typingStats.averageKeyHoldTime || 0,
+        averageFlightTime: typingStats.averageFlightTime || 0,
+        averageKeyboardLatency: typingStats.averageKeyboardLatency || 0,
+        averageTapRhythm: typingStats.averageTapRhythm || 0
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    console.log('📤 Sending sessionData:', sessionData);
+
+    const response = await fetch('https://e170-2405-201-500c-50c8-d0a8-316d-2852-6723.ngrok-free.app/api/behavior/typing', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ sessionData }) // Must be wrapped inside { sessionData }
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      console.log('✅ Typing session data saved successfully:', result);
+      Alert.alert('Success', 'Your typing data has been saved securely!',[{
+        text:'OK',
+        onPress: () => {router.replace('/mpin-validation')}
+      }]);
+    } else {
+      console.error('❌ Failed to save typing session data:', result.message);
+      Alert.alert('Error', result.message || 'Failed to save typing data. Please try again.');
+    }
+  } catch (error) {
+    console.error('❌ Error saving typing session data:', error);
+    Alert.alert('Error', 'Network error. Please check your connection.');
+  }
+};
+
+
 
   // ✅ Enhanced handleTextChange with comprehensive tracking and latency measurement
   const handleTextChange = (text: string) => {

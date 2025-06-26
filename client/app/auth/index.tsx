@@ -16,95 +16,105 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { saveToken } from '@/utils/token';
+import { getSessionStatus } from '../api/user';
 
 export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mpin, setMpin] = useState('');
+  const [username, setUsername] = useState('');
   const [confirmMpin, setConfirmMpin] = useState('');
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleAuth = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+const API = 'https://e170-2405-201-500c-50c8-d0a8-316d-2852-6723.ngrok-free.app/api';
+
+const handleAuth = async () => {
+  if (!email || !password) {
+    Alert.alert('Error', 'Please fill in all fields');
+    return;
+  }
+
+  if (!email.includes('@')) {
+    Alert.alert('Error', 'Please enter a valid email address');
+    return;
+  }
+
+  if (password.length < 6) {
+    Alert.alert('Error', 'Password must be at least 6 characters');
+    return;
+  }
+
+  if (!isLogin) {
+    if (!mpin || mpin.length !== 6) {
+      Alert.alert('Error', 'Please enter a 6-digit MPIN');
       return;
     }
 
-    if (!email.includes('@')) {
-      Alert.alert('Error', 'Please enter a valid email address');
+    if (mpin !== confirmMpin) {
+      Alert.alert('Error', 'MPIN and confirm MPIN do not match');
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+    if (['123456', '000000', '111111'].includes(mpin)) {
+      Alert.alert('Error', 'Please choose a stronger MPIN');
       return;
     }
+  }
 
-    // ✅ MPIN validation for registration
-    if (!isLogin) {
-      if (!mpin || mpin.length !== 6) {
-        Alert.alert('Error', 'Please enter a 6-digit MPIN');
-        return;
-      }
+  setLoading(true);
 
-      if (mpin !== confirmMpin) {
-        Alert.alert('Error', 'MPIN and confirm MPIN do not match');
-        return;
-      }
+  const endpoint = isLogin
+    ? `${API}/auth/login`
+    : `${API}/auth/register`;
 
-      // Check for weak MPIN patterns
-      if (mpin === '123456' || mpin === '000000' || mpin === '111111') {
-        Alert.alert('Error', 'Please choose a stronger MPIN');
-        return;
-      }
+  try {
+    const requestBody = isLogin
+      ? { email, password }
+      : {username,email, password, mpin };
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data?.message || 'Authentication failed');
+
+    const token = isLogin ? data.data.token : data.data.token;
+
+    if (!token) {
+      throw new Error('No token received from server');
     }
 
-    setLoading(true);
+    await saveToken(token);
+    console.log('✅ Token:', token);
 
-    const endpoint = isLogin
-      ? 'http://192.168.1.100:3001/api/auth/login'
-      : 'http://192.168.1.100:3001/api/auth/register';
+    if (isLogin) {
+      const session = await getSessionStatus(token);
 
-    try {
-      const requestBody = isLogin 
-        ? { email, password }
-        : { email, password, mpin }; // ✅ Include MPIN for registration
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data?.message || 'Authentication failed');
-      }
-
-      console.log('Success:', data);
-      
-      if (isLogin) {
-        // ✅ For login, go to MPIN validation page
-        await saveToken(data.token);
+      if (session.needsTyping) {
+        router.replace('/typing_game');
+      } else if (session.needsMpin) {
         router.replace('/mpin-validation');
       } else {
-        // ✅ For registration, go directly to typing game
-        await saveToken(data.token);
-        router.replace('/typing_game');
+        router.replace('/main_menu'); // Main menu route
       }
-      
-    } catch (error: any) {
-      console.error(error);
-      Alert.alert('Error', error.message || 'Something went wrong');
-    } finally {
-      setLoading(false);
+    } else {
+      router.replace('/typing_game');
     }
-  };
+
+  } catch (error: any) {
+    console.error('❌ Auth Error:', error);
+    Alert.alert('Error', error.message || 'Something went wrong');
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <KeyboardAvoidingView 
@@ -167,6 +177,28 @@ export default function AuthScreen() {
                   />
                 </View>
               </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Username</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons 
+                    name="mail-outline" 
+                    size={20} 
+                    color="#666" 
+                    style={styles.inputIcon}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your username"
+                    placeholderTextColor="#999"
+                    value={username}
+                    onChangeText={setUsername}
+                    autoCapitalize="none"
+                    autoComplete="username"
+                  />
+                </View>
+              </View>
+
 
               {/* Password Input */}
               <View style={styles.inputContainer}>

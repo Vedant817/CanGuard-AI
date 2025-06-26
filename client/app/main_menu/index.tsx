@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,42 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { getToken } from '@/utils/token';
+import {getUserProfile} from '@/app/api/user';
+
 
 export default function BankingDashboard() {
+
+
   const [selectedTab, setSelectedTab] = useState('UPI');
+  const [user,setUser] = useState<any>(null);
+  const router = useRouter();
+
+    useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const token = await getToken();
+        if (!token) {
+          router.replace('/'); 
+          return;
+        }
+        await getUserProfile(token); 
+        const userProfile = await getUserProfile(token);
+        setUser(userProfile); 
+      } catch (err: any) {
+        if (err.message?.includes('Typing')) {
+          router.replace('/typing_game');
+        } else if (err.message?.includes('MPIN')) {
+          router.replace('/mpin-validation');
+        } else {
+          router.replace('/');
+        }
+      }
+    };
+
+    checkAuth();
+  }, [])
 
   const HeaderIcon = ({ name, color = '#019EEC' }: { name: string; color?: string }) => (
     <TouchableOpacity style={styles.headerIcon}>
@@ -50,7 +83,7 @@ export default function BankingDashboard() {
           <View style={styles.profileIcon}>
             <Text style={styles.profileText}>U</Text>
           </View>
-          <Text style={styles.headerTitle}>User</Text>
+          <Text style={styles.headerTitle}>Welcome, {user?.username || 'User'}</Text>
         </View>
         
         <View style={styles.headerRight}>

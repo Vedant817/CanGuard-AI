@@ -47,7 +47,8 @@
         {
           "motionPermission": "Allow CanGuard AI to access motion sensors for behavioral authentication"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
