@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState,useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -16,15 +17,54 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { saveToken } from '@/utils/token';
+import { getSessionStatus } from '../api/user';
 
 export default function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mpin, setMpin] = useState('');
+  const [username, setUsername] = useState('');
   const [confirmMpin, setConfirmMpin] = useState('');
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const API = 'https://e170-2405-201-500c-50c8-d0a8-316d-2852-6723.ngrok-free.app/api';
+
+  // ✅ Auto-redirect if token already exists
+useEffect(() => {
+  (async () => {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      // Call session-status endpoint as fast as possible
+      const res = await fetch('https://e170-2405-201-500c-50c8-d0a8-316d-2852-6723.ngrok-free.app/api/user/session-status', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const data = await res.json();
+
+      if (!data.success || !data.session) return;
+
+      const { needsTyping, needsLogin } = data.session;
+
+      if (needsTyping) {
+        router.replace('/typing_game');
+      } else if (needsLogin) {
+        await AsyncStorage.removeItem('token');
+        router.replace('/auth');
+      } else {
+        router.replace('/mpin-validation');
+      }
+    } catch (err) {
+      console.log('⚠️ Session check failed:', err.message);
+    }
+  })();
+}, []);
+
 
   const handleAuth = async () => {
     if (!email || !password) {
@@ -42,7 +82,6 @@ export default function AuthScreen() {
       return;
     }
 
-    // ✅ MPIN validation for registration
     if (!isLogin) {
       if (!mpin || mpin.length !== 6) {
         Alert.alert('Error', 'Please enter a 6-digit MPIN');
@@ -54,8 +93,7 @@ export default function AuthScreen() {
         return;
       }
 
-      // Check for weak MPIN patterns
-      if (mpin === '123456' || mpin === '000000' || mpin === '111111') {
+      if (['123456', '000000', '111111'].includes(mpin)) {
         Alert.alert('Error', 'Please choose a stronger MPIN');
         return;
       }
@@ -64,47 +102,52 @@ export default function AuthScreen() {
     setLoading(true);
 
     const endpoint = isLogin
-      ? 'http://192.168.1.100:3001/api/auth/login'
-      : 'http://192.168.1.100:3001/api/auth/register';
+      ? `${API}/auth/login`
+      : `${API}/auth/register`;
 
     try {
-      const requestBody = isLogin 
+      const requestBody = isLogin
         ? { email, password }
-        : { email, password, mpin }; // ✅ Include MPIN for registration
+        : { username, email, password, mpin };
 
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data?.message || 'Authentication failed');
+      if (!res.ok) throw new Error(data?.message || 'Authentication failed');
+
+      const token = data?.data?.token || data?.token;
+      if (!token) throw new Error('No token received from server');
+
+      await saveToken(token);
+      console.log('✅ Token:', token);
+
+      if (isLogin) {
+        const session = await getSessionStatus(token);
+        if (session.needsTyping) {
+          router.replace('/typing_game');
+        } else if (session.needsLogin) {
+          Alert.alert('Session Expired', 'Please sign in again.');
+          router.replace('/auth');
+        } else {
+          router.replace('/mpin-validation');
+        }
+      } else {
+        router.replace('/typing_game');
       }
 
-      console.log('Success:', data);
-      
-      if (isLogin) {
-        // ✅ For login, go to MPIN validation page
-        await saveToken(data.token);
-        router.replace('/mpin-validation');
-      } else {
-        // ✅ For registration, go directly to typing game
-        await saveToken(data.token);
-        router.replace('/typing-game');
-      }
-      
     } catch (error: any) {
-      console.error(error);
+      console.error('❌ Auth Error:', error);
       Alert.alert('Error', error.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <KeyboardAvoidingView 
@@ -167,6 +210,28 @@ export default function AuthScreen() {
                   />
                 </View>
               </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Username</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons 
+                    name="mail-outline" 
+                    size={20} 
+                    color="#666" 
+                    style={styles.inputIcon}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your username"
+                    placeholderTextColor="#999"
+                    value={username}
+                    onChangeText={setUsername}
+                    autoCapitalize="none"
+                    autoComplete="username"
+                  />
+                </View>
+              </View>
+
 
               {/* Password Input */}
               <View style={styles.inputContainer}>

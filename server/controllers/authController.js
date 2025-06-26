@@ -81,6 +81,8 @@ exports.register = async (req, res) => {
     });
 
     // ✅ Save user first, then generate token
+    
+    user.lastLoginVerifiedAt = new Date();
     await user.save();
     const token = generateToken(user);
 
@@ -150,6 +152,7 @@ exports.login = async (req, res) => {
 
     // ✅ Generate token
     const token = generateToken(user);
+    user.lastLoginVerifiedAt = new Date();
 
     // ✅ Improved response format
     res.status(200).json({
@@ -180,56 +183,20 @@ exports.login = async (req, res) => {
 exports.validateMpin = async (req, res) => {
   try {
     const { mpin } = req.body;
-    const userId = req.userId; // ✅ Make sure this comes from auth middleware
+    const userId = req.userId;
 
-    // ✅ Input validation
-    if (!mpin || mpin.length !== 6 || !/^\d{6}$/.test(mpin)) {
-      return res.status(400).json({
-        success: false,
-        message: 'MPIN must be exactly 6 digits'
-      });
-    }
-
-    // ✅ Find user and include MPIN field
     const user = await User.findById(userId).select('+mpin');
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
-    // ✅ Validate MPIN
     const isMpinValid = await bcrypt.compare(mpin, user.mpin);
-    if (!isMpinValid) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid MPIN'
-      });
-    }
+    if (!isMpinValid) return res.status(401).json({ success: false, message: 'Invalid MPIN' });
 
-    // ✅ Update last login time
-    user.lastLogin = new Date();
+    user.lastMpinVerifiedAt = new Date();
     await user.save();
 
-    res.json({
-      success: true,
-      message: 'MPIN validated successfully',
-      data: {
-        user: {
-          id: user._id,
-          email: user.email,
-          username: user.username
-        }
-      }
-    });
-
+    res.json({ success: true, message: 'MPIN verified successfully' });
   } catch (error) {
-    console.error('MPIN validation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'MPIN validation failed',
-      error: error.message
-    });
+    console.error('MPIN error:', error);
+    res.status(500).json({ success: false, message: 'MPIN validation failed' });
   }
 };
