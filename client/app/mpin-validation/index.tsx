@@ -15,6 +15,7 @@ import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { getToken } from "@/utils/token";
+import API_BASE_URL from "@/config/api";
 
 export default function MPINValidationScreen() {
   const [mpin, setMpin] = useState(["", "", "", "", "", ""]);
@@ -73,7 +74,7 @@ export default function MPINValidationScreen() {
       }
 
       const response = await fetch(
-        "https://e170-2405-201-500c-50c8-d0a8-316d-2852-6723.ngrok-free.app/api/auth/mpin",
+        `${API_BASE_URL}/api/auth/mpin`,
         {
           method: "POST",
           headers: {

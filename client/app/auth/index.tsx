@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { saveToken } from '@/utils/token';
 import { getSessionStatus } from '../api/user';
+import API_BASE_URL from '@/config/api';
 
 export default function AuthScreen() {
   const [email, setEmail] = useState('');
@@ -29,8 +30,6 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const API = 'https://e170-2405-201-500c-50c8-d0a8-316d-2852-6723.ngrok-free.app/api';
-
   // ✅ Auto-redirect if token already exists
 useEffect(() => {
   (async () => {
@@ -39,7 +38,7 @@ useEffect(() => {
 
     try {
       // Call session-status endpoint as fast as possible
-      const res = await fetch('https://e170-2405-201-500c-50c8-d0a8-316d-2852-6723.ngrok-free.app/api/user/session-status', {
+      const res = await fetch(`${API_BASE_URL}/api/user/session-status`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -102,8 +101,8 @@ useEffect(() => {
     setLoading(true);
 
     const endpoint = isLogin
-      ? `${API}/auth/login`
-      : `${API}/auth/register`;
+      ? `${API_BASE_URL}/api/auth/login`
+      : `${API_BASE_URL}/api/auth/register`;
 
     try {
       const requestBody = isLogin

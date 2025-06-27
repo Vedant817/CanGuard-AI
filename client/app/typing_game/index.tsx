@@ -22,6 +22,7 @@ import * as Network from 'expo-network';
 import * as SecureStore from 'expo-secure-store';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import API_BASE_URL from '@/config/api';
 
 const { width } = Dimensions.get('window');
 
@@ -640,7 +641,7 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
 
     console.log('📤 Sending sessionData:', sessionData);
 
-    const response = await fetch('https://e170-2405-201-500c-50c8-d0a8-316d-2852-6723.ngrok-free.app/api/behavior/typing', {
+    const response = await fetch(`${API_BASE_URL}/api/behavior/typing`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
