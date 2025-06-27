@@ -3,7 +3,7 @@ import API_BASE_URL from '@/config/api';
 
 export const getSessionStatus = async (token: string) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/user/session-status`, {
+    const response = await axios.get(`${API_BASE_URL}/api/user/session-status`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     return response.data.session;
@@ -15,7 +15,7 @@ export const getSessionStatus = async (token: string) => {
 
 export const getUserProfile = async (token: string) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/user/profile`, {
+    const response = await axios.get(`${API_BASE_URL}/api/user/profile`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     return response.data.data;

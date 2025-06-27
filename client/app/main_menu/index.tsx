@@ -11,8 +11,9 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { getToken } from '@/utils/token';
+import { getToken,clearToken } from '@/utils/token';
 import {getUserProfile} from '@/app/api/user';
+
 
 
 export default function BankingDashboard() {
@@ -46,6 +47,12 @@ export default function BankingDashboard() {
 
     checkAuth();
   }, [])
+
+  const handleLogout = async () => {
+  await clearToken();
+  router.replace('/');
+};
+
 
   const HeaderIcon = ({ name, color = '#019EEC' }: { name: string; color?: string }) => (
     <TouchableOpacity style={styles.headerIcon}>
@@ -87,11 +94,10 @@ export default function BankingDashboard() {
         </View>
         
         <View style={styles.headerRight}>
-          <HeaderIcon name="analytics-outline" />
-          <HeaderIcon name="logo-usd" color="#FFB600" />
-          <HeaderIcon name="search-outline" />
-          <HeaderIcon name="notifications-outline" />
-          <HeaderIcon name="power-outline" />
+          <TouchableOpacity style={styles.headerIcon} onPress={handleLogout}>
+  <Ionicons name="power-outline" size={24} color="red" />
+</TouchableOpacity>
+
         </View>
       </View>
 
