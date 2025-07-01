@@ -22,6 +22,20 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  age:{
+    type: Number,
+  },
+  disability: {
+    type: String,
+    enum: ['None', 'Visual', 'Hearing', 'Motor', 'Cognitive'],
+  },
+  lastBehavioralVerification: {
+    type: Date,
+    default: null,
+  },
+  lastMpinVerifiedAt: { type: Date, default: null },
+  lastLoginVerifiedAt: { type: Date, default: null },
+  deviceUUIDs: [{ type: String }],
 }, { timestamps: true });
 
 const User = mongoose.model('User', userSchema);

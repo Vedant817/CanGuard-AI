@@ -1,26 +1,13 @@
-import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const saveToken = async (token: string) => {
-  try {
-    await SecureStore.setItemAsync('canara-token', token);
-  } catch (error) {
-    console.error('Error saving token:', error);
-  }
+  await AsyncStorage.setItem('token', token);
 };
 
 export const getToken = async () => {
-  try {
-    return await SecureStore.getItemAsync('canara-token');
-  } catch (error) {
-    console.error('Error getting token:', error);
-    return null;
-  }
+  return await AsyncStorage.getItem('token');
 };
 
-export const deleteToken = async () => {
-  try {
-    await SecureStore.deleteItemAsync('canara-token');
-  } catch (error) {
-    console.error('Error deleting token:', error);
-  }
+export const clearToken = async () => {
+  await AsyncStorage.removeItem('token');
 };
