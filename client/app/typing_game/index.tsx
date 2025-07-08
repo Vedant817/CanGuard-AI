@@ -43,7 +43,6 @@ interface TypingStats {
   correctKeystrokes: number;
   averageSpeed: number;
   consistency: number;
-  // ✅ Enhanced behavioral metrics
   typingSpeed: number; // Characters per minute
   errorRate: number; // Percentage of backspaces
   averageKeyHoldTime: number; // Average dwell time

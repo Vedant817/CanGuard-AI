@@ -193,10 +193,10 @@ export default function BankingDashboard() {
           </View>
           
           <View style={styles.servicesGrid}>
-            <ServiceCard icon="send-outline" title="Send Money" />
-            <ServiceCard icon="card-outline" title="Direct Pay" />
-            <ServiceCard icon="person-outline" title="My Beneficiary" />
-            <ServiceCard icon="book-outline" title="ePassbook" />
+            <ServiceCard icon="send-outline" title="Send Money" onPress={()=>router.push('/main_menu/send_money')}/>
+            <ServiceCard icon="card-outline" title="Direct Pay" onPress={()=>router.push('/main_menu/direct_pay')}/>
+            <ServiceCard icon="person-outline" title="My Beneficiary" onPress={()=>router.push('/main_menu/my_beneficiary')}/>
+            <ServiceCard icon="book-outline" title="ePassbook" onPress={()=>router.push('/main_menu/ePassbook')}/>
             <ServiceCard icon="receipt-outline" title="Bill Pay" />
             <ServiceCard icon="wallet-outline" title="Card-less Cash" />
             <ServiceCard icon="business-outline" title="Other Bank Accounts" />
