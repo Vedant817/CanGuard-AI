@@ -17,8 +17,6 @@ import {getUserProfile} from '@/app/api/user';
 
 
 export default function BankingDashboard() {
-
-
   const [selectedTab, setSelectedTab] = useState('UPI');
   const [user,setUser] = useState<any>(null);
   const router = useRouter();
