@@ -44,12 +44,22 @@ export default function SendMoneyScreen() {
   const [monitoringActive, setMonitoringActive] = useState(false);
   const [interactionData, setInteractionData] = useState([]);
   
-  // NEW: Typing state management
+  // Typing state management
   const [isActivelyTyping, setIsActivelyTyping] = useState(false);
   const [lastTypingTime, setLastTypingTime] = useState(0);
   const [typingTimeout, setTypingTimeout] = useState(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [focusedInput, setFocusedInput] = useState(null);
+  
+  // NEW: T1 Model Integration State
+  const [authenticationStatus, setAuthenticationStatus] = useState('UNKNOWN');
+  const [t1ModelData, setT1ModelData] = useState(null);
+  const [lastAuthResult, setLastAuthResult] = useState(null);
+  const [userProfile, setUserProfile] = useState({
+    referenceProfile: [100, 57.08510638297872, 0, 179, 90, 0, 98.63829787234043, 45, 45, 1],
+    age: 25,
+    lastLoginLocation: null
+  });
   
   const router = useRouter();
   const monitoringInterval = useRef(null);
@@ -58,17 +68,17 @@ export default function SendMoneyScreen() {
   const captchaStartTime = useRef(null);
   
   // Constants for typing detection
-  const TYPING_TIMEOUT_DURATION = 2000; // 2 seconds of inactivity = not typing
-  const MIN_TYPING_INTERVAL = 100; // Minimum time between keystrokes to consider active typing
+  const TYPING_TIMEOUT_DURATION = 2000;
+  const MIN_TYPING_INTERVAL = 100;
 
   // Initialize monitoring on component mount
   useEffect(() => {
     initializeDeviceMetrics();
     startBehavioralMonitoring();
     setMonitoringActive(true);
+    loadUserProfile();
     
     return () => {
-      // Enhanced cleanup on unmount
       if (monitoringInterval.current) {
         clearInterval(monitoringInterval.current);
       }
@@ -79,13 +89,44 @@ export default function SendMoneyScreen() {
     };
   }, []);
 
-  // Enhanced 10-second monitoring timer that respects typing state
+  // Load user profile for T1 model
+  const loadUserProfile = async () => {
+    try {
+      const storedProfile = await AsyncStorage.getItem('userBehavioralProfile');
+      if (storedProfile) {
+        setUserProfile(JSON.parse(storedProfile));
+      }
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+    }
+  };
+
+  // Enhanced 10-second monitoring timer with T1 model integration
   useEffect(() => {
     let intervalId;
     
     if (monitoringActive) {
       intervalId = setInterval(async () => {
         try {
+          // Collect data for T1 model
+          const t1Data = await collectDataForT1Model();
+          setT1ModelData(t1Data);
+          
+          // Only run T1 authentication if actively typing or in CAPTCHA mode
+          if (isActivelyTyping || captchaVisible) {
+            const authResult = await performBehavioralAuthentication(t1Data);
+            setLastAuthResult(authResult);
+            
+            // Store authentication result
+            await AsyncStorage.setItem('lastAuthResult', JSON.stringify(authResult));
+            
+            // Update UI with authentication status
+            setAuthenticationStatus(authResult.authentication_result?.decision || 'UNKNOWN');
+            
+            console.log('🔐 T1 Authentication Result:', authResult);
+          }
+          
+          // Continue with regular snapshot collection
           const snapshot = await collectDataSnapshot();
           setJsonSnapshot(snapshot);
           
@@ -97,6 +138,7 @@ export default function SendMoneyScreen() {
               timestamp: snapshot.timestamp,
               screenInfo: snapshot.screenInfo,
               transactionData: snapshot.transactionData,
+              authStatus: authenticationStatus,
               message: "Typing tracking paused - no active typing detected"
             });
           }
@@ -110,7 +152,7 @@ export default function SendMoneyScreen() {
           }
           
         } catch (error) {
-          console.error('Error collecting send money snapshot:', error);
+          console.error('Error in enhanced monitoring:', error);
         }
       }, 10000); // 10 seconds
     }
@@ -121,6 +163,290 @@ export default function SendMoneyScreen() {
       }
     };
   }, [monitoringActive, samplingActive, captchaVisible, isActivelyTyping, keystrokeData, touchData, interactionData]);
+
+  // Collect data specifically formatted for T1 model
+  const collectDataForT1Model = async () => {
+    const snapshot = await collectDataSnapshot();
+    
+    // Format data specifically for T1 model consumption
+    const t1ModelData = {
+      timestamp: snapshot.timestamp,
+      sessionId: snapshot.sessionId,
+      typingStats: {
+        accuracy: snapshot.typingStats.accuracy || 0,
+        averageFlightTime: snapshot.typingStats.averageFlightTime || 0,
+        errors: snapshot.typingStats.errors || 0,
+        typingSpeed: snapshot.typingStats.typingSpeed || 0,
+        consistency: snapshot.typingStats.consistency || 0,
+        errorRate: snapshot.typingStats.errorRate || 0,
+        averageKeyHoldTime: snapshot.typingStats.averageKeyHoldTime || 0,
+        keystrokes: snapshot.typingStats.keystrokes || 0,
+        averageKeyboardLatency: snapshot.typingStats.averageKeyboardLatency || 0,
+        backspaceCount: snapshot.typingStats.backspaceCount || 0
+      },
+      deviceMetrics: snapshot.deviceMetrics,
+      interactionStats: snapshot.interactionStats,
+      screenInfo: snapshot.screenInfo,
+      behavioralMetrics: snapshot.behavioralMetrics,
+      userProfile: userProfile
+    };
+    
+    return t1ModelData;
+  };
+
+  // Client-side T1 Model Implementation
+  const performBehavioralAuthentication = async (sensorData) => {
+    try {
+      // Extract behavioral vector from sensor data
+      const behavioralVector = extractBehavioralVector(sensorData);
+      
+      // Get reference profile
+      const referenceProfile = userProfile.referenceProfile;
+      
+      // Compute anomaly score
+      const anomalyScore = computeAnomalyScore(behavioralVector, referenceProfile);
+      
+      // Perform rule-based checks
+      const ruleFlags = performRuleBasedChecks(sensorData);
+      
+      // Make authentication decision
+      const decision = makeAuthenticationDecision(anomalyScore, ruleFlags, sensorData);
+      
+      // Update reference profile if appropriate
+      if (decision.decision === 'PASS' && isSafeToUpdate(behavioralVector, referenceProfile)) {
+        const updatedProfile = updateReferenceProfile(referenceProfile, behavioralVector);
+        setUserProfile(prev => ({ ...prev, referenceProfile: updatedProfile }));
+        await AsyncStorage.setItem('userBehavioralProfile', JSON.stringify({
+          ...userProfile,
+          referenceProfile: updatedProfile
+        }));
+      }
+      
+      return {
+        authentication_result: decision,
+        behavioral_vector: behavioralVector,
+        anomaly_score: anomalyScore,
+        rule_flags: ruleFlags,
+        reference_profile: referenceProfile,
+        timestamp: sensorData.timestamp,
+        session_info: sensorData.screenInfo
+      };
+      
+    } catch (error) {
+      console.error('T1 Authentication Error:', error);
+      return {
+        error: `Authentication failed: ${error.message}`,
+        authentication_result: { decision: 'ERROR', confidence: 0, risk_level: 'HIGH' }
+      };
+    }
+  };
+
+  // Extract behavioral vector from sensor data
+  const extractBehavioralVector = (sensorData) => {
+    const typingStats = sensorData.typingStats || {};
+    
+    return [
+      typingStats.accuracy || 0,
+      typingStats.averageFlightTime || 0,
+      typingStats.errors || 0,
+      typingStats.typingSpeed || 0,
+      typingStats.consistency || 0,
+      typingStats.errorRate || 0,
+      typingStats.averageKeyHoldTime || 0,
+      typingStats.keystrokes || 0,
+      typingStats.averageKeyboardLatency || 0,
+      typingStats.backspaceCount || 0
+    ];
+  };
+
+  // Compute anomaly score
+  const computeAnomalyScore = (behavioralVector, referenceProfile) => {
+    if (behavioralVector.filter(v => v !== 0).length < 4) {
+      return null; // Insufficient data
+    }
+    
+    let totalDeviation = 0;
+    let validMetrics = 0;
+    
+    for (let i = 0; i < behavioralVector.length; i++) {
+      if (behavioralVector[i] !== 0 && referenceProfile[i] !== 0) {
+        const deviation = Math.abs(behavioralVector[i] - referenceProfile[i]) / (referenceProfile[i] * 0.1 + 1e-8);
+        totalDeviation += deviation;
+        validMetrics++;
+      }
+    }
+    
+    return validMetrics > 0 ? totalDeviation / validMetrics : null;
+  };
+
+  // Perform rule-based checks
+  const performRuleBasedChecks = (sensorData) => {
+    const flags = [];
+    const deviceMetrics = sensorData.deviceMetrics || {};
+    const gpsLocation = deviceMetrics.gpsLocation;
+    
+    // Location-based checks
+    if (gpsLocation && userProfile.lastLoginLocation) {
+      const distance = calculateDistance(
+        userProfile.lastLoginLocation.latitude,
+        userProfile.lastLoginLocation.longitude,
+        gpsLocation.latitude,
+        gpsLocation.longitude
+      );
+      
+      if (distance > 10) {
+        flags.push(`Unusual login distance (${distance.toFixed(1)}km)`);
+      }
+    }
+    
+    // Typing behavior checks
+    const typingStats = sensorData.typingStats || {};
+    if (typingStats.accuracy !== 0 && typingStats.accuracy < 50) {
+      flags.push('Suspicious typing accuracy');
+    }
+    
+    if (typingStats.errorRate !== 0 && typingStats.errorRate > 15) {
+      flags.push('High error rate detected');
+    }
+    
+    // Network checks
+    const networkInfo = deviceMetrics.networkInfo || {};
+    if (!networkInfo.isConnected) {
+      flags.push('Network connectivity issues');
+    }
+    
+    return flags;
+  };
+
+  // Calculate distance between two GPS coordinates
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  // Make authentication decision
+  const makeAuthenticationDecision = (anomalyScore, ruleFlags, sensorData) => {
+    const T_PASS = 1.5;
+    const T_ESC_T2 = 2.5;
+    
+    if (anomalyScore === null) {
+      return {
+        decision: "SKIP_INTERVAL",
+        reason: "insufficient data",
+        confidence: 0.5,
+        risk_level: 'LOW'
+      };
+    }
+    
+    if (anomalyScore < T_PASS && ruleFlags.length === 0) {
+      return {
+        decision: "PASS",
+        reason: "normal behavior",
+        confidence: 0.9,
+        risk_level: 'LOW'
+      };
+    } else if (anomalyScore < T_ESC_T2 || ruleFlags.length > 0) {
+      return {
+        decision: "ESCALATE_TO_T2",
+        reason: `moderate anomaly (score: ${anomalyScore.toFixed(2)}, flags: ${ruleFlags.length})`,
+        confidence: 0.6,
+        risk_level: 'MEDIUM'
+      };
+    } else {
+      return {
+        decision: "ESCALATE_TO_T3",
+        reason: `high anomaly (score: ${anomalyScore.toFixed(2)})`,
+        confidence: 0.8,
+        risk_level: 'HIGH'
+      };
+    }
+  };
+
+  // Check if it's safe to update reference profile
+  const isSafeToUpdate = (behavioralVector, referenceProfile) => {
+    const score = computeAnomalyScore(behavioralVector, referenceProfile);
+    return score !== null && score < 1.5;
+  };
+
+  // Update reference profile using EMA
+  const updateReferenceProfile = (referenceProfile, behavioralVector) => {
+    const alpha = 0.05; // Learning rate
+    const updatedProfile = [];
+    
+    for (let i = 0; i < referenceProfile.length; i++) {
+      if (behavioralVector[i] !== 0) {
+        updatedProfile[i] = alpha * behavioralVector[i] + (1 - alpha) * referenceProfile[i];
+      } else {
+        updatedProfile[i] = referenceProfile[i];
+      }
+    }
+    
+    return updatedProfile;
+  };
+
+  // Handle authentication results
+  const handleAuthenticationResult = (authResult) => {
+    const decision = authResult.authentication_result?.decision;
+    
+    switch (decision) {
+      case 'PASS':
+        console.log('✅ User authenticated successfully');
+        break;
+        
+      case 'ESCALATE_TO_T2':
+        console.log('⚠️ Escalating to T2 verification');
+        triggerT2Verification(authResult);
+        break;
+        
+      case 'ESCALATE_TO_T3':
+        console.log('🚨 Escalating to T3 verification');
+        triggerT3Verification(authResult);
+        break;
+        
+      case 'SKIP_INTERVAL':
+        console.log('⏭️ Skipping this interval');
+        break;
+        
+      default:
+        console.log('❌ Authentication error');
+        break;
+    }
+  };
+
+  // Trigger T2 verification (additional authentication)
+  const triggerT2Verification = (authResult) => {
+    Alert.alert(
+      'Additional Verification Required',
+      'Please complete additional verification for security.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Verify', onPress: () => {
+          // Implement T2 verification (OTP, biometric, etc.)
+          console.log('T2 verification triggered');
+        }}
+      ]
+    );
+  };
+
+  // Trigger T3 verification (high-security verification)
+  const triggerT3Verification = (authResult) => {
+    Alert.alert(
+      'High-Security Verification Required',
+      'Unusual activity detected. Please contact customer support.',
+      [
+        { text: 'OK', onPress: () => {
+          // Implement T3 verification or redirect to support
+          console.log('T3 verification triggered');
+        }}
+      ]
+    );
+  };
 
   // Helper function to check if any form input is focused
   const isFormInputFocused = () => {
@@ -140,7 +466,6 @@ export default function SendMoneyScreen() {
     setIsActivelyTyping(false);
     console.log(`📝 Input blurred: ${inputName} - disabling typing tracking`);
     
-    // Clear typing timeout when input loses focus
     if (typingTimeout) {
       clearTimeout(typingTimeout);
       setTypingTimeout(null);
@@ -153,7 +478,6 @@ export default function SendMoneyScreen() {
     const sessionDuration = (currentTime - sessionStartTime.current) / 1000;
     const captchaDuration = captchaStartTime.current ? (currentTime - captchaStartTime.current) / 1000 : 0;
     
-    // Only collect detailed typing stats if actively typing
     const typingStats = isActivelyTyping || captchaVisible ? 
       buildEnhancedTypingStats(sessionDuration, captchaDuration) : 
       buildBasicStats(sessionDuration);
@@ -254,26 +578,21 @@ export default function SendMoneyScreen() {
     const firstActiveKeystroke = activeKeystrokes[0].timestamp;
     const lastActiveKeystroke = activeKeystrokes[activeKeystrokes.length - 1].timestamp;
     
-    return (lastActiveKeystroke - firstActiveKeystroke) / 1000; // Convert to seconds
+    return (lastActiveKeystroke - firstActiveKeystroke) / 1000;
   };
 
   // Initialize device metrics with proper error handling
   const initializeDeviceMetrics = async () => {
     try {
-      // Fix: Handle deviceUUID properly
       let deviceUUID = await AsyncStorage.getItem('secure_deviceid');
       
-      // If deviceUUID exists and looks like JSON, parse it; otherwise use as string
       if (deviceUUID) {
         try {
-          // Try to parse if it's a JSON string
           if (deviceUUID.startsWith('{') || deviceUUID.startsWith('[') || deviceUUID.startsWith('"')) {
             deviceUUID = JSON.parse(deviceUUID);
           }
-          // If it's already a plain string, use it directly
         } catch (parseError) {
           console.log('DeviceUUID is not JSON, using as string:', deviceUUID);
-          // Use the string value directly
         }
       } else {
         deviceUUID = 'unknown-device';
@@ -294,6 +613,12 @@ export default function SendMoneyScreen() {
             accuracy: location.coords.accuracy,
             timestamp: location.timestamp,
           };
+          
+          // Update user profile with current location
+          setUserProfile(prev => ({
+            ...prev,
+            lastLoginLocation: gpsLocation
+          }));
         }
       } catch (error) {
         console.log('GPS location not available:', error);
@@ -304,13 +629,13 @@ export default function SendMoneyScreen() {
       setDeviceMetrics({
         keyboardLatency: [],
         ipAddress: ipAddress || '0.0.0.0',
-        deviceUUID: deviceUUID, // Fix: Remove JSON.parse() here
+        deviceUUID: deviceUUID,
         gpsLocation,
         deviceInfo: {
           brand: Device.brand || 'Unknown',
           model: Device.modelName || 'Unknown',
           systemVersion: Device.osVersion || '0.0',
-          uniqueId: deviceUUID, // Fix: Remove JSON.parse() here
+          uniqueId: deviceUUID,
           deviceType: Device.deviceType?.toString() || '0',
           totalMemory: 0,
           usedMemory: 0,
@@ -326,7 +651,6 @@ export default function SendMoneyScreen() {
     } catch (error) {
       console.error('Error initializing device metrics:', error);
       
-      // Fallback: Set default values if initialization fails
       setDeviceMetrics({
         keyboardLatency: [],
         ipAddress: '0.0.0.0',
@@ -354,28 +678,24 @@ export default function SendMoneyScreen() {
 
   // Start behavioral monitoring
   const startBehavioralMonitoring = () => {
-    console.log('🔄 Enhanced behavioral monitoring started - collecting data every 10 seconds');
+    console.log('🔄 Enhanced behavioral monitoring with T1 model started - collecting data every 10 seconds');
   };
 
   // Enhanced keystroke tracking that detects active typing
   const trackKeystroke = (key, isBackspace = false) => {
     const currentTime = Date.now();
     
-    // Only track if we're in a typing context (CAPTCHA visible or form inputs focused)
     if (!captchaVisible && !isFormInputFocused()) {
       return;
     }
     
-    // Set actively typing state
     setIsActivelyTyping(true);
     setLastTypingTime(currentTime);
     
-    // Clear existing timeout
     if (typingTimeout) {
       clearTimeout(typingTimeout);
     }
     
-    // Set new timeout to detect when typing stops
     const newTimeout = setTimeout(() => {
       setIsActivelyTyping(false);
       console.log('🛑 Typing stopped - pausing keystroke tracking');
@@ -397,7 +717,6 @@ export default function SendMoneyScreen() {
     setKeystrokeData(prev => [...prev.slice(-50), keystroke]);
     lastInteractionTime.current = currentTime;
     
-    // Add to interaction data only during active typing
     const interaction = {
       type: 'keystroke',
       target: isBackspace ? 'backspace' : 'typing',
@@ -423,7 +742,6 @@ export default function SendMoneyScreen() {
     setTouchData(prev => [...prev.slice(-30), touch]);
     lastInteractionTime.current = currentTime;
     
-    // Add to interaction data
     const interaction = {
       type: 'touch',
       target: coordinates.target || type,
@@ -659,7 +977,7 @@ export default function SendMoneyScreen() {
         totalPause += interval;
       }
     }
-    return totalPause / 1000; // Convert to seconds
+    return totalPause / 1000;
   };
 
   const calculateAverageResponseTime = () => {
@@ -678,11 +996,9 @@ export default function SendMoneyScreen() {
   // Update device metrics with current data
   const updateDeviceMetrics = async () => {
     try {
-      // Add keyboard latency data
-      const newLatency = Math.floor(Math.random() * 50) + 30; // 30-80ms
+      const newLatency = Math.floor(Math.random() * 50) + 30;
       const updatedLatency = [...(deviceMetrics.keyboardLatency || []), newLatency].slice(-10);
       
-      // Update GPS location if available
       let currentGpsLocation = deviceMetrics.gpsLocation;
       try {
         const location = await Location.getCurrentPositionAsync({
@@ -725,10 +1041,11 @@ export default function SendMoneyScreen() {
 
       const behavioralData = {
         typingStats,
-        deviceMetrics
+        deviceMetrics,
+        authenticationResult: lastAuthResult
       };
 
-      console.log('📤 Sending behavioral data:', JSON.stringify(behavioralData, null, 2));
+      console.log('📤 Sending behavioral data with T1 results:', JSON.stringify(behavioralData, null, 2));
 
       const response = await fetch(`${API_BASE_URL}/api/behavior/navigation`, {
         method: 'POST',
@@ -803,10 +1120,8 @@ export default function SendMoneyScreen() {
       return;
     }
     
-    // Pause regular monitoring during CAPTCHA
     setSamplingActive(false);
     
-    // Generate and show typing CAPTCHA
     const sentence = generateTypingSentence();
     setCaptchaSentence(sentence);
     setCaptchaInput('');
@@ -816,7 +1131,6 @@ export default function SendMoneyScreen() {
     setStartTime(Date.now());
     captchaStartTime.current = Date.now();
     
-    // Track CAPTCHA start interaction
     trackTouch('captcha_start', { target: 'captcha_modal' });
   };
 
@@ -824,27 +1138,23 @@ export default function SendMoneyScreen() {
   const handleTypingInput = (text) => {
     setCaptchaInput(text);
     
-    // Track keystroke only during active CAPTCHA typing
     if (text.length > captchaInput.length) {
-      // Character added
       const newChar = text[text.length - 1];
       trackKeystroke(newChar);
     } else if (text.length < captchaInput.length) {
-      // Character deleted (backspace)
       trackKeystroke('Backspace', true);
     }
     
-    // Calculate accuracy in real-time
     const accuracy = calculateTypingAccuracy(text, captchaSentence);
     setTypingAccuracy(accuracy);
     
-    // Check if typing is complete and accurate
     const isComplete = text.length >= captchaSentence.length;
     const isAccurate = accuracy >= 95;
     
     setIsTypingComplete(isComplete && isAccurate);
   };
 
+  // Enhanced typing verification with T1 model integration
   const verifyTyping = async () => {
     const accuracy = calculateTypingAccuracy(captchaInput, captchaSentence);
     
@@ -879,6 +1189,20 @@ export default function SendMoneyScreen() {
       return;
     }
     
+    // Perform final T1 behavioral authentication
+    const finalT1Data = await collectDataForT1Model();
+    const finalAuthResult = await performBehavioralAuthentication(finalT1Data);
+    
+    console.log('🎯 Final T1 Authentication Result:', finalAuthResult);
+    
+    // Check T1 authentication result
+    const authDecision = finalAuthResult.authentication_result?.decision;
+    
+    if (authDecision === 'ESCALATE_TO_T2' || authDecision === 'ESCALATE_TO_T3') {
+      handleAuthenticationResult(finalAuthResult);
+      return;
+    }
+    
     // Collect final CAPTCHA completion snapshot
     const completionSnapshot = await collectDataSnapshot();
     completionSnapshot.captchaCompletion = {
@@ -886,16 +1210,14 @@ export default function SendMoneyScreen() {
       finalAccuracy: accuracy,
       completionTime: Date.now(),
       totalDuration: (Date.now() - captchaStartTime.current) / 1000,
-      finalTypingStats: buildEnhancedTypingStats(0, (Date.now() - captchaStartTime.current) / 1000)
+      finalTypingStats: buildEnhancedTypingStats(0, (Date.now() - captchaStartTime.current) / 1000),
+      t1AuthResult: finalAuthResult
     };
     
-    console.log('🎉 CAPTCHA Completion Snapshot:', JSON.stringify(completionSnapshot, null, 2));
+    console.log('🎉 CAPTCHA Completion Snapshot with T1 Auth:', JSON.stringify(completionSnapshot, null, 2));
     await AsyncStorage.setItem('captchaCompletionSnapshot', JSON.stringify(completionSnapshot));
     
-    // Resume regular monitoring
     setSamplingActive(true);
-    
-    // Typing verified, close modal and show confirmation
     setCaptchaVisible(false);
     trackTouch('captcha_verified', { target: 'verify_button' });
     
@@ -910,7 +1232,6 @@ export default function SendMoneyScreen() {
   };
 
   const processTransaction = async () => {
-    // Collect final transaction snapshot
     const transactionSnapshot = await collectDataSnapshot();
     transactionSnapshot.transactionCompletion = {
       completed: true,
@@ -918,7 +1239,8 @@ export default function SendMoneyScreen() {
       recipient: recipient,
       method: selectedMethod,
       completionTime: Date.now(),
-      totalSessionDuration: (Date.now() - sessionStartTime.current) / 1000
+      totalSessionDuration: (Date.now() - sessionStartTime.current) / 1000,
+      finalAuthStatus: authenticationStatus
     };
     
     console.log('💰 Transaction Completion Snapshot:', JSON.stringify(transactionSnapshot, null, 2));
@@ -940,7 +1262,6 @@ export default function SendMoneyScreen() {
     setStartTime(Date.now());
     captchaStartTime.current = Date.now();
     
-    // Reset keystroke data for new sentence
     setKeystrokeData([]);
     
     trackTouch('captcha_refreshed', { target: 'refresh_captcha' });
@@ -951,6 +1272,16 @@ export default function SendMoneyScreen() {
     if (typingAccuracy >= 95) return '#4CAF50';
     if (typingAccuracy >= 80) return '#FF9800';
     return '#F44336';
+  };
+
+  // Get color based on authentication status
+  const getAuthStatusColor = () => {
+    switch (authenticationStatus) {
+      case 'PASS': return '#4CAF50';
+      case 'ESCALATE_TO_T2': return '#FF9800';
+      case 'ESCALATE_TO_T3': return '#F44336';
+      default: return '#666';
+    }
   };
 
   // Highlight typed characters
@@ -1137,10 +1468,10 @@ export default function SendMoneyScreen() {
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* Monitoring Status Display (Optional) */}
+        {/* Enhanced Monitoring Status Display with T1 Model Results */}
         {jsonSnapshot && (
           <View style={styles.monitoringStatus}>
-            <Text style={styles.monitoringTitle}>📊 Live Monitoring</Text>
+            <Text style={styles.monitoringTitle}>🔐 T1 Behavioral Authentication</Text>
             <Text style={styles.monitoringText}>
               Last Update: {new Date(jsonSnapshot.timestamp).toLocaleTimeString()}
             </Text>
@@ -1159,6 +1490,14 @@ export default function SendMoneyScreen() {
             <Text style={styles.monitoringText}>
               Focused Input: {focusedInput || 'None'}
             </Text>
+            <Text style={[styles.authStatusText, { color: getAuthStatusColor() }]}>
+              Auth Status: {authenticationStatus}
+            </Text>
+            {lastAuthResult && (
+              <Text style={styles.monitoringText}>
+                Anomaly Score: {lastAuthResult.anomaly_score?.toFixed(2) || 'N/A'}
+              </Text>
+            )}
           </View>
         )}
       </ScrollView>
@@ -1190,9 +1529,12 @@ export default function SendMoneyScreen() {
               >
                 <View style={styles.modalHeader}>
                   <Ionicons name="create-outline" size={32} color="#019EEC" />
-                  <Text style={styles.modalTitle}>Enhanced Typing Verification</Text>
+                  <Text style={styles.modalTitle}>T1 Behavioral Verification</Text>
                   <Text style={styles.modalSubtitle}>
                     Type the sentence below exactly as shown (95% accuracy required)
+                  </Text>
+                  <Text style={[styles.authStatusIndicator, { color: getAuthStatusColor() }]}>
+                    Current Auth Status: {authenticationStatus}
                   </Text>
                 </View>
 
@@ -1202,8 +1544,8 @@ export default function SendMoneyScreen() {
                   <View style={styles.sentenceHolder}>
                     {renderHighlightedText()}
                   </View>
-                  
-                  {/* Enhanced Accuracy Indicator */}
+
+                                    {/* Enhanced Accuracy Indicator */}
                   <View style={styles.accuracyContainer}>
                     <View style={styles.accuracyInfo}>
                       <Text style={styles.accuracyLabel}>Accuracy:</Text>
@@ -1223,7 +1565,7 @@ export default function SendMoneyScreen() {
                       />
                     </View>
                     
-                    {/* Additional Metrics */}
+                    {/* Additional Metrics with T1 Model Data */}
                     <View style={styles.additionalMetrics}>
                       <Text style={styles.metricText}>
                         Speed: {keystrokeData.length > 0 ? Math.round((keystrokeData.length / ((Date.now() - startTime) / 1000)) * 60) : 0} CPM
@@ -1233,6 +1575,9 @@ export default function SendMoneyScreen() {
                       </Text>
                       <Text style={styles.metricText}>
                         Active Typing: {isActivelyTyping ? '✅' : '❌'}
+                      </Text>
+                      <Text style={[styles.metricText, { color: getAuthStatusColor() }]}>
+                        T1 Status: {authenticationStatus}
                       </Text>
                     </View>
                   </View>
@@ -1269,6 +1614,50 @@ export default function SendMoneyScreen() {
                     </Text>
                   </View>
                 </View>
+
+                {/* T1 Model Real-time Feedback */}
+                {lastAuthResult && (
+                  <View style={styles.t1FeedbackContainer}>
+                    <Text style={styles.t1FeedbackTitle}>🤖 T1 Model Analysis</Text>
+                    <View style={styles.t1MetricsGrid}>
+                      <View style={styles.t1Metric}>
+                        <Text style={styles.t1MetricLabel}>Anomaly Score</Text>
+                        <Text style={styles.t1MetricValue}>
+                          {lastAuthResult.anomaly_score?.toFixed(2) || 'N/A'}
+                        </Text>
+                      </View>
+                      <View style={styles.t1Metric}>
+                        <Text style={styles.t1MetricLabel}>Risk Level</Text>
+                        <Text style={[styles.t1MetricValue, { 
+                          color: lastAuthResult.authentication_result?.risk_level === 'HIGH' ? '#F44336' : 
+                                 lastAuthResult.authentication_result?.risk_level === 'MEDIUM' ? '#FF9800' : '#4CAF50'
+                        }]}>
+                          {lastAuthResult.authentication_result?.risk_level || 'UNKNOWN'}
+                        </Text>
+                      </View>
+                      <View style={styles.t1Metric}>
+                        <Text style={styles.t1MetricLabel}>Confidence</Text>
+                        <Text style={styles.t1MetricValue}>
+                          {(lastAuthResult.authentication_result?.confidence * 100)?.toFixed(0) || 0}%
+                        </Text>
+                      </View>
+                      <View style={styles.t1Metric}>
+                        <Text style={styles.t1MetricLabel}>Flags</Text>
+                        <Text style={styles.t1MetricValue}>
+                          {lastAuthResult.rule_flags?.length || 0}
+                        </Text>
+                      </View>
+                    </View>
+                    {lastAuthResult.rule_flags && lastAuthResult.rule_flags.length > 0 && (
+                      <View style={styles.flagsContainer}>
+                        <Text style={styles.flagsTitle}>⚠️ Detected Issues:</Text>
+                        {lastAuthResult.rule_flags.map((flag, index) => (
+                          <Text key={index} style={styles.flagText}>• {flag}</Text>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
 
                 {/* Action Buttons */}
                 <View style={styles.modalButtons}>
@@ -1324,7 +1713,7 @@ export default function SendMoneyScreen() {
   );
 }
 
-// Enhanced styles with monitoring components
+// Complete Enhanced styles with T1 model components
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8f9fa' },
   header: {
@@ -1408,7 +1797,7 @@ const styles = StyleSheet.create({
   },
   sendButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   
-  // Monitoring Status Styles
+  // Enhanced Monitoring Status Styles with T1 Model
   monitoringStatus: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -1431,6 +1820,11 @@ const styles = StyleSheet.create({
   monitoringText: {
     fontSize: 12,
     color: '#666',
+    marginBottom: 4,
+  },
+  authStatusText: {
+    fontSize: 14,
+    fontWeight: '600',
     marginBottom: 4,
   },
   
@@ -1473,6 +1867,12 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     lineHeight: 20,
+    marginBottom: 8,
+  },
+  authStatusIndicator: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   sentenceContainer: {
     width: '100%',
@@ -1533,6 +1933,7 @@ const styles = StyleSheet.create({
   },
   additionalMetrics: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
@@ -1540,7 +1941,73 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     fontWeight: '500',
+    marginRight: 8,
+    marginBottom: 4,
   },
+  
+  // T1 Model Feedback Styles
+  t1FeedbackContainer: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  t1FeedbackTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  t1MetricsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  t1Metric: {
+    width: '48%',
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  t1MetricLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  t1MetricValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'center',
+  },
+  flagsContainer: {
+    backgroundColor: '#fff3cd',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#ffeaa7',
+  },
+  flagsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#856404',
+    marginBottom: 8,
+  },
+  flagText: {
+    fontSize: 12,
+    color: '#856404',
+    marginBottom: 4,
+  },
+  
   inputSection: {
     marginBottom: 20,
   },
