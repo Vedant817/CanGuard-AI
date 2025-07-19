@@ -332,7 +332,7 @@ export default function SendMoneyScreen() {
 
   // Make authentication decision
   const makeAuthenticationDecision = (anomalyScore, ruleFlags, sensorData) => {
-    const T_PASS = 1.5;
+    const T_PASS = 0.95;
     const T_ESC_T2 = 2.5;
     
     if (anomalyScore === null) {
