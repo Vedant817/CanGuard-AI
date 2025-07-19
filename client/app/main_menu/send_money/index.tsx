@@ -1,5 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  ScrollView, SafeAreaView, Alert, Modal, Platform, KeyboardAvoidingView,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
+import API_BASE_URL from '@/config/api'; // Make sure this points to your Python server
+import {
   View,
   Text,
   TextInput,
@@ -88,6 +98,127 @@ export default function SendMoneyScreen() {
       console.log('🧹 SendMoneyScreen cleanup - all tracking stopped');
     };
   }, []);
+
+  // CanGuard-AI/client/app/main_menu/send_money/index.tsx
+
+
+
+export default function SendMoneyScreen() {
+  // State for UI and data collection remains mostly the same...
+  const [amount, setAmount] = useState('');
+  const [recipient, setRecipient] = useState('');
+  const [upiId, setUpiId] = useState('');
+  const [note, setNote] = useState('');
+  const [selectedMethod, setSelectedMethod] = useState('UPI');
+  const [captchaSentence, setCaptchaSentence] = useState('');
+  const [captchaInput, setCaptchaInput] = useState('');
+  const [captchaVisible, setCaptchaVisible] = useState(false);
+  const [isActivelyTyping, setIsActivelyTyping] = useState(false);
+  const [lastTypingTime, setLastTypingTime] = useState(0);
+  const [typingTimeout, setTypingTimeout] = useState(null);
+  
+  // NEW: Simplified state for backend authentication
+  const [authenticationStatus, setAuthenticationStatus] = useState('UNKNOWN');
+  const [lastAuthResponse, setLastAuthResponse] = useState(null);
+  
+  const router = useRouter();
+  const sessionStartTime = useRef(Date.now());
+  const TYPING_TIMEOUT_DURATION = 2000;
+  
+  // ... (Other state variables and helper functions for data collection)
+
+  // This is the core new logic
+  const performBackendAuthentication = async () => {
+    if (!isActivelyTyping && !captchaVisible) {
+      console.log('No active typing, skipping backend call.');
+      return;
+    }
+    
+    try {
+      // 1. Collect all necessary data
+      const behavioralVector = collectBehavioralVector();
+      const location = await Location.getCurrentPositionAsync({});
+      
+      const location_info = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        // In a real app, you'd compare this to the last known location to set is_traveling
+        is_traveling: false 
+      };
+
+      const requestPayload = {
+        user_id: "user_id_42", // This should be dynamic from user login state
+        age: 35, // This should also be from user profile
+        behavioral_vector: behavioralVector,
+        location_info: location_info,
+      };
+
+      // 2. Send data to your Python backend
+      const response = await fetch(`${API_BASE_URL}/api/authenticate`, { // Assuming you create this endpoint
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${await AsyncStorage.getItem('authToken')}`,
+        },
+        body: JSON.stringify(requestPayload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server responded with status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      // 3. Update UI with the decision from the backend
+      setAuthenticationStatus(result.decision);
+      setLastAuthResponse(result);
+      
+      console.log('🔐 Backend Auth Result:', result);
+      
+      // 4. Trigger alerts based on backend decision
+      handleAuthenticationResult(result);
+
+    } catch (error) {
+      console.error('Error performing backend authentication:', error);
+      setAuthenticationStatus('ERROR');
+    }
+  };
+
+  // NEW: Simplified data collection for the backend
+  const collectBehavioralVector = () => {
+    // This function reuses your existing logic to calculate the 10-dim vector
+    // For brevity, using placeholder values here.
+    // Replace these with your actual calculations from 'buildEnhancedTypingStats'.
+    return [
+      91.5, 315.2, 4.8, 325.6, 87.1, 4.5, 46.1, 118.0, 148.2, 3.5
+    ];
+  };
+  
+  // This function now handles the response from the server
+  const handleAuthenticationResult = (authResult) => {
+    const decision = authResult?.decision;
+    switch(decision) {
+      case 'ESCALATE_TO_T2':
+        Alert.alert('Verification Required', 'Please complete an additional check.');
+        break;
+      case 'ESCALATE_TO_T3':
+      case 'BLOCK - HIGH RISK':
+      case 'MANUAL REVIEW':
+        Alert.alert('Security Alert', 'Unusual activity detected. For your safety, this session may be limited.');
+        break;
+      // No alert needed for PASS or SKIP
+    }
+  };
+
+  // The 10-second timer now calls the backend authentication function
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      performBackendAuthentication();
+    }, 10000); // 10 seconds
+
+    return () => clearInterval(intervalId);
+  }, [isActivelyTyping, captchaVisible]); // Re-run if typing state changes
+
 
   // Load user profile for T1 model
   const loadUserProfile = async () => {
