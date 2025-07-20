@@ -332,7 +332,7 @@ export default function SendMoneyScreen() {
 
   // Make authentication decision
   const makeAuthenticationDecision = (anomalyScore, ruleFlags, sensorData) => {
-    const T_PASS = 1.5;
+    const T_PASS = 2.0;
     const T_ESC_T2 = 2.5;
     
     if (anomalyScore === null) {
@@ -437,7 +437,7 @@ export default function SendMoneyScreen() {
   // Trigger T3 verification (high-security verification)
   const triggerT3Verification = (authResult) => {
     Alert.alert(
-      'High-Security Verification Required',
+      'Your Application has been freezed by the Bank Authority. High-Security Verification Required',
       'Unusual activity detected. Please contact customer support.',
       [
         { text: 'OK', onPress: () => {

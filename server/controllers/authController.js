@@ -2,7 +2,6 @@ const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 
-// ✅ Fix: Add ValidationUtil import or define it
 const ValidationUtil = {
   sanitizeInput: (input) => {
     return input.trim().replace(/[<>]/g, '');
@@ -21,16 +20,12 @@ const generateToken = (user) => {
 exports.register = async (req, res) => {
   try {
     const { username, email, password, mpin } = req.body;
-
-    // ✅ Add validation for all required fields
     if (!username || !email || !password) {
       return res.status(400).json({
         success: false,
         message: 'Please provide username, email and password'
       });
     }
-
-    // ✅ Add email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({
@@ -38,16 +33,12 @@ exports.register = async (req, res) => {
         message: 'Please provide a valid email address'
       });
     }
-
-    // ✅ Add password validation
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
         message: 'Password must be at least 6 characters long'
       });
     }
-
-    // MPIN validation
     if (!mpin || mpin.length !== 6 || !/^\d{6}$/.test(mpin)) {
       return res.status(400).json({
         success: false,
@@ -55,7 +46,6 @@ exports.register = async (req, res) => {
       });
     }
 
-    // Check if user already exists
     const existingUser = await User.findOne({ 
       $or: [{ email }, { username }] 
     });
@@ -67,26 +57,18 @@ exports.register = async (req, res) => {
         message: `${field} already in use`
       });
     }
-    
-    // ✅ Fix: Hash both password and MPIN properly
-    const hashedPassword = await bcrypt.hash(password, 12); // Increased salt rounds for better security
+    const hashedPassword = await bcrypt.hash(password, 12); 
     const hashedMpin = await bcrypt.hash(mpin, 12);
-    
-    // ✅ Fix: Use hashed password in user creation
     const user = new User({
       username: ValidationUtil.sanitizeInput(username),
       email: email.toLowerCase(),
-      password: hashedPassword, // ✅ Use hashed password instead of plain text
+      password: hashedPassword, 
       mpin: hashedMpin,
     });
 
-    // ✅ Save user first, then generate token
-    
     user.lastLoginVerifiedAt = new Date();
     await user.save();
     const token = generateToken(user);
-
-    // ✅ Improved response format
     res.status(201).json({
       success: true,
       message: 'Registration successful',
@@ -102,8 +84,6 @@ exports.register = async (req, res) => {
 
   } catch (err) {
     console.error('Register Error:', err);
-    
-    // ✅ Handle duplicate key errors
     if (err.code === 11000) {
       const field = Object.keys(err.keyPattern)[0];
       return res.status(400).json({
@@ -123,16 +103,12 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // ✅ Add input validation
     if (!email || !password) {
       return res.status(400).json({
         success: false,
         message: 'Please provide email and password'
       });
     }
-
-    // ✅ Find user and include password field
     const user = await User.findOne({ email }).select('+password');
     if (!user) {
       return res.status(401).json({ 
