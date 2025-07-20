@@ -2,6 +2,7 @@
 
 # dependencies
 node_modules/
+my-release-key.keystore
 
 # Expo
 .expo/

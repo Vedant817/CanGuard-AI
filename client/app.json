@@ -23,7 +23,8 @@
       "permissions": [
         "android.permission.VIBRATE",
         "android.permission.HIGH_SAMPLING_RATE_SENSORS"
-      ]
+      ],
+      "package": "com.suraksha.client"
     },
     "web": {
       "bundler": "metro",
@@ -52,6 +53,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6d44eba5-65ed-4106-bf33-11a1f014bfe3"
+      }
     }
   }
 }
