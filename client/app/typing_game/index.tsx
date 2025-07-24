@@ -1,4 +1,3 @@
-// app/typing-game.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -27,7 +26,6 @@ import API_BASE_URL from '@/config/api';
 const { width } = Dimensions.get('window');
 
 const SAMPLE_TEXTS = [
-  "The quick brown fox jumps over the lazy dog. This sentence contains every letter of the alphabet.",
   "Banking security is paramount in today's digital world. Protect your financial information at all times.",
   "Canara Bank provides secure and reliable banking services to millions of customers across India.",
   "Technology has revolutionized the way we handle our finances and conduct banking transactions.",
@@ -876,23 +874,71 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
     touchStartPosition.current = null;
   };
 
-  const renderText = () => {
-    return currentText.split('').map((char, index) => {
-      let style = styles.defaultChar;
-      
-      if (index < userInput.length) {
-        style = userInput[index] === char ? styles.correctChar : styles.incorrectChar;
-      } else if (index === userInput.length) {
-        style = styles.currentChar;
-      }
-      
-      return (
-        <Text key={index} style={style}>
-          {char}
-        </Text>
-      );
-    });
-  };
+const renderEnhancedTextOptimized = () => {
+  const words = currentText.split(' ');
+  let charIndex = 0;
+  
+  return (
+    <Text style={styles.textWrapper}>
+      {words.map((word, wordIndex) => {
+        const wordStart = charIndex;
+        const wordEnd = charIndex + word.length;
+        
+        // Create styled word
+        const styledWord = word.split('').map((char, charInWordIndex) => {
+          const currentCharIndex = charIndex + charInWordIndex;
+          let style = styles.defaultChar;
+          
+          if (currentCharIndex < userInput.length) {
+            if (userInput[currentCharIndex] === char) {
+              style = styles.correctChar;
+            } else {
+              style = styles.incorrectChar;
+            }
+          } else if (currentCharIndex === userInput.length) {
+            style = styles.currentChar;
+          }
+          
+          return (
+            <Text key={`${wordIndex}-${charInWordIndex}`} style={style}>
+              {char}
+            </Text>
+          );
+        });
+        
+        charIndex += word.length;
+        
+        // Handle space
+        const spaceStyle = (() => {
+          if (wordIndex < words.length - 1) {
+            if (charIndex < userInput.length) {
+              const spaceCorrect = userInput[charIndex] === ' ';
+              charIndex++; // Increment for space
+              return spaceCorrect ? styles.correctChar : styles.incorrectChar;
+            } else if (charIndex === userInput.length) {
+              charIndex++; // Increment for space
+              return styles.currentChar;
+            } else {
+              charIndex++; // Increment for space
+              return styles.defaultChar;
+            }
+          }
+          return null;
+        })();
+        
+        return (
+          <Text key={wordIndex}>
+            {styledWord}
+            {wordIndex < words.length - 1 && (
+              <Text style={spaceStyle || styles.defaultChar}> </Text>
+            )}
+          </Text>
+        );
+      })}
+    </Text>
+  );
+};
+
 
   const getWPMColor = (wpm: number) => {
     if (wpm >= 60) return '#4CAF50';
@@ -922,7 +968,7 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
         </TouchableOpacity>
         
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Typing Speed Test</Text>
+          <Text style={styles.headerTitle}>CanGuard Typing Dojo</Text>
           <Text style={styles.headerSubtitle}>Behavioral Authentication Training</Text>
         </View>
 
@@ -968,7 +1014,7 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
         {/* Text Display */}
         <View style={styles.textContainer}>
           <View style={styles.textDisplay}>
-            {renderText()}
+            {renderEnhancedTextOptimized()}
           </View>
         </View>
 
@@ -1146,7 +1192,7 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#F5F7FA',
   },
   header: {
     flexDirection: 'row',
@@ -1154,34 +1200,36 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     paddingBottom: 20,
     paddingHorizontal: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
   backButton: {
     padding: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 12,
   },
   headerContent: {
     flex: 1,
     alignItems: 'center',
   },
   skipButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
-  },
-  skipButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+    borderRadius: 12,
+    backdropFilter: 'blur(10px)',
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 26,
+    fontWeight: '800',
     color: '#fff',
     marginBottom: 4,
+    letterSpacing: 0.5,
   },
   headerSubtitle: {
     fontSize: 16,
-    color: '#E8F4FD',
+    color: 'rgba(255, 255, 255, 0.9)',
+    letterSpacing: 0.3,
   },
   content: {
     flex: 1,
@@ -1192,47 +1240,252 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-around',
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: '#2D3748',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 12,
+    elevation: 4,
   },
   statItem: {
     alignItems: 'center',
     minWidth: '30%',
-    marginBottom: 8,
+    marginBottom: 12,
+    padding: 8,
   },
   statValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#2D3748',
+    marginBottom: 4,
   },
   statLabel: {
-    fontSize: 10,
-    color: '#666',
-    marginTop: 4,
+    fontSize: 12,
+    color: '#718096',
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+textContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 20,
+    shadowColor: '#2D3748',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+ textDisplay: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start', // Add this
+    width: '100%', // Add this
+  },
+  defaultChar: {
+    fontSize: 20,
+    color: '#718096',
+    lineHeight: 32,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  correctChar: {
+    fontSize: 20,
+    color: '#48BB78',
+    backgroundColor: '#F0FFF4',
+    lineHeight: 32,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  textWrapper: {
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  lineHeight: 32,
+  fontSize: 20,
+},
+  incorrectChar: {
+    fontSize: 20,
+    color: '#E53E3E',
+    backgroundColor: '#FFF5F5',
+    lineHeight: 32,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  currentChar: {
+    fontSize: 20,
+    color: '#2D3748',
+    backgroundColor: '#FEEBC8',
+    lineHeight: 32,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    borderRadius: 4,
+  },
+  inputContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 20,
+    shadowColor: '#2D3748',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  textInput: {
+    fontSize: 18,
+    padding: 20,
+    minHeight: 120,
+    textAlignVertical: 'top',
+    color: '#2D3748',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  controlsContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  startButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    width: '100%',
+    maxWidth: 320,
+    shadowColor: '#ED8936',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  buttonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginLeft: 12,
+    letterSpacing: 0.5,
+  },
+  resultsContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#2D3748',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  resultsTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#2D3748',
+    textAlign: 'center',
+    marginBottom: 24,
+    letterSpacing: 0.5,
+  },
+  successMessage: {
+    backgroundColor: '#F0FFF4',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#48BB78',
+  },
+  successText: {
+    color: '#2F855A',
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    letterSpacing: 0.3,
+  },
+  resultGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  resultItem: {
+    width: '48%',
+    alignItems: 'center',
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: '#F7FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  resultLabel: {
+    fontSize: 14,
+    color: '#718096',
+    marginBottom: 6,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  resultValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#2D3748',
+  },
+  actionButtons: {
+    gap: 16,
+    marginTop: 24,
+    width: '100%',
+  },
+  continueButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#3182CE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  playAgainButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#ED8936',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  infoSection: {
+    backgroundColor: '#F7FAFC',
+    borderRadius: 12,
+    padding: 20,
+    marginTop: 24,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  infoText: {
+    color: '#718096',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    letterSpacing: 0.3,
   },
   deviceInfoContainer: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 24,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: '#2D3748',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 12,
+    elevation: 4,
   },
   deviceInfoTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2D3748',
+    marginBottom: 16,
     textAlign: 'center',
+    letterSpacing: 0.5,
   },
   deviceInfoGrid: {
     flexDirection: 'row',
@@ -1241,198 +1494,25 @@ const styles = StyleSheet.create({
   },
   deviceInfoItem: {
     width: '48%',
-    marginBottom: 12,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#F7FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   deviceInfoLabel: {
     fontSize: 12,
-    color: '#666',
-    marginBottom: 2,
+    color: '#718096',
+    marginBottom: 4,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   deviceInfoValue: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#333',
-  },
-  textContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  textDisplay: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    lineHeight: 28,
-  },
-  defaultChar: {
-    fontSize: 18,
-    color: '#666',
-    lineHeight: 28,
-  },
-  correctChar: {
-    fontSize: 18,
-    color: '#4CAF50',
-    backgroundColor: '#E8F5E8',
-    lineHeight: 28,
-  },
-  incorrectChar: {
-    fontSize: 18,
-    color: '#F44336',
-    backgroundColor: '#FFEBEE',
-    lineHeight: 28,
-  },
-  currentChar: {
-    fontSize: 18,
-    color: '#333',
-    backgroundColor: '#FFB600',
-    lineHeight: 28,
-  },
-  inputContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  textInput: {
-    fontSize: 16,
-    padding: 16,
-    minHeight: 100,
-    textAlignVertical: 'top',
-    color: '#333',
-  },
-  controlsContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  startButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#FFB600',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  resetButton: {
-    backgroundColor: '#666',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  resetButtonText: {
-    color: '#fff',
-    fontSize: 16,
     fontWeight: '600',
-  },
-  buttonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  resultsContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  resultsTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  successMessage: {
-    backgroundColor: '#E8F5E8',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#4CAF50',
-  },
-  successText: {
-    color: '#2E7D32',
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  resultGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  resultItem: {
-    width: '48%',
-    alignItems: 'center',
-    marginBottom: 16,
-    padding: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-  },
-  resultLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  resultValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  actionButtons: {
-    gap: 12,
-    marginTop: 20,
-  },
-  continueButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#019EEC',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  playAgainButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#FFB600',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  infoSection: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    padding: 16,
-    marginTop: 20,
-  },
-  infoText: {
-    color: '#666',
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
+    color: '#2D3748',
+    letterSpacing: 0.3,
+  }
 });
