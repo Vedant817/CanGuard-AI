@@ -1,4 +1,3 @@
-// app/typing-game.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -27,7 +26,6 @@ import API_BASE_URL from '@/config/api';
 const { width } = Dimensions.get('window');
 
 const SAMPLE_TEXTS = [
-  "The quick brown fox jumps over the lazy dog. This sentence contains every letter of the alphabet.",
   "Banking security is paramount in today's digital world. Protect your financial information at all times.",
   "Canara Bank provides secure and reliable banking services to millions of customers across India.",
   "Technology has revolutionized the way we handle our finances and conduct banking transactions.",
@@ -43,13 +41,13 @@ interface TypingStats {
   correctKeystrokes: number;
   averageSpeed: number;
   consistency: number;
-  typingSpeed: number; // Characters per minute
-  errorRate: number; // Percentage of backspaces
-  averageKeyHoldTime: number; // Average dwell time
-  averageFlightTime: number; // Average flight time
-  averageTapRhythm: number; // Average time between taps
-  backspaceCount: number; // Total backspaces
-  averageKeyboardLatency: number; // ✅ Average keyboard latency
+  typingSpeed: number;
+  errorRate: number;
+  averageKeyHoldTime: number;
+  averageFlightTime: number;
+  averageTapRhythm: number;
+  backspaceCount: number;
+  averageKeyboardLatency: number;
 }
 
 interface EnhancedKeystrokeData {
@@ -57,41 +55,20 @@ interface EnhancedKeystrokeData {
   timestamp: number;
   pressTime: number;
   releaseTime: number;
-  dwellTime: number; // Key hold time
-  flightTime: number; // Key flight time
+  dwellTime: number;
+  flightTime: number;
   correct: boolean;
   position: number;
   pressure?: number;
-  isBackspace: boolean; // Track backspaces for error rate
-  inputLatency: number; // ✅ Time from key press to text change
-  systemLatency: number; // ✅ System processing time
-}
-
-interface TouchData {
-  type: 'tap' | 'swipe';
-  timestamp: number;
-  startX: number;
-  startY: number;
-  endX?: number;
-  endY?: number;
-  direction?: 'up' | 'down' | 'left' | 'right';
-  velocity?: number;
-  duration: number;
-}
-
-interface SensorData {
-  accelerometer: { x: number; y: number; z: number; timestamp: number }[];
-  gyroscope: { x: number; y: number; z: number; timestamp: number }[];
-  magnetometer: { x: number; y: number; z: number; timestamp: number }[];
-  deviceOrientation: string;
-  movementPatterns: number[];
-  stabilityScore: number;
+  isBackspace: boolean;
+  inputLatency: number;
+  systemLatency: number;
 }
 
 interface DeviceMetrics {
   keyboardLatency: number[];
   ipAddress: string;
-  deviceUUID: string; // ✅ Added UUID tracking
+  deviceUUID: string;
   gpsLocation: {
     latitude: number;
     longitude: number;
@@ -116,34 +93,189 @@ interface DeviceMetrics {
   };
 }
 
-interface BehavioralMetrics {
-  typingPatterns: {
-    averageDwellTime: number;
-    averageFlightTime: number;
-    dwellTimeVariance: number;
-    flightTimeVariance: number;
-    typingRhythm: number;
-    interKeyInterval: number;
-    pausePatterns: number[];
-    speedVariation: number;
-    errorRate: number;
-    correctionPatterns: number;
-  };
-  sensorData: SensorData;
-  sessionMetrics: {
-    sessionDuration: number;
-    totalPauses: number;
-    averagePauseLength: number;
-    typingBursts: number[];
-    concentrationLevel: number;
-  };
-  touchMetrics: {
-    swipeData: TouchData[];
-    tapRhythm: number[];
-    swipeFrequency: number;
-    averageSwipeVelocity: number;
-  };
-  deviceMetrics: DeviceMetrics; // ✅ Added device metrics
+// ✅ NEW: Behavioral Vector Interface
+interface BehavioralVector {
+  wpm: number;
+  accuracy: number;
+  typingSpeed: number;
+  errorRate: number;
+  averageKeyHoldTime: number;
+  averageFlightTime: number;
+  averageKeyboardLatency: number;
+  averageTapRhythm: number;
+  timestamp: number;
+  keysPressed: number;
+  correctKeys: number;
+  startTime: number;
+}
+
+// ✅ NEW: Behavioral Data Collector Class
+class BehavioralDataCollector {
+  private vectors: BehavioralVector[] = [];
+  private currentVector: BehavioralVector;
+  private keystrokeData: EnhancedKeystrokeData[] = [];
+  private deviceMetrics: DeviceMetrics;
+  private isCollecting = false;
+  private collectionInterval: NodeJS.Timeout | null = null;
+  private readonly COLLECTION_INTERVAL = 6000; // 6 seconds
+  private readonly BUFFER_SIZE = 5; // Latest 5 vectors
+
+  constructor(deviceMetrics: DeviceMetrics) {
+    this.deviceMetrics = deviceMetrics;
+    this.currentVector = this.initializeVector();
+  }
+
+  private initializeVector(): BehavioralVector {
+    return {
+      wpm: 0,
+      accuracy: 0,
+      typingSpeed: 0,
+      errorRate: 0,
+      averageKeyHoldTime: 0,
+      averageFlightTime: 0,
+      averageKeyboardLatency: 0,
+      averageTapRhythm: 0,
+      timestamp: Date.now(),
+      keysPressed: 0,
+      correctKeys: 0,
+      startTime: Date.now()
+    };
+  }
+
+  startCollection() {
+    this.isCollecting = true;
+    this.currentVector = this.initializeVector();
+    
+    // Start collecting vectors every 6 seconds
+    this.collectionInterval = setInterval(() => {
+      this.captureVector();
+    }, this.COLLECTION_INTERVAL);
+    
+    console.log('🔄 Behavioral data collection started (6-second intervals)');
+  }
+
+  stopCollection() {
+    this.isCollecting = false;
+    if (this.collectionInterval) {
+      clearInterval(this.collectionInterval);
+      this.collectionInterval = null;
+    }
+    
+    // Capture final vector if there's activity
+    if (this.currentVector.keysPressed > 0) {
+      this.captureVector();
+    }
+    
+    console.log('⏹️ Behavioral data collection stopped');
+  }
+
+  addKeystroke(keystroke: EnhancedKeystrokeData) {
+    if (!this.isCollecting) return;
+
+    // Skip backspace for behavioral analysis
+    if (keystroke.isBackspace) return;
+
+    this.keystrokeData.push(keystroke);
+    this.currentVector.keysPressed++;
+    
+    if (keystroke.correct) {
+      this.currentVector.correctKeys++;
+    }
+  }
+
+  private captureVector() {
+    if (this.currentVector.keysPressed === 0) return;
+
+    const currentTime = Date.now();
+    const timeElapsed = (currentTime - this.currentVector.startTime) / 1000; // in seconds
+    const timeElapsedMinutes = timeElapsed / 60;
+
+    // Filter out backspace keystrokes for calculations
+    const validKeystrokes = this.keystrokeData.filter(k => !k.isBackspace);
+    
+    // Calculate metrics for current vector
+    const dwellTimes = validKeystrokes.map(k => k.dwellTime).filter(t => t > 0);
+    const flightTimes = validKeystrokes.map(k => k.flightTime).filter(t => t > 0);
+    const latencies = this.deviceMetrics.keyboardLatency.slice(-this.currentVector.keysPressed);
+    
+    // Calculate tap rhythm
+    const tapIntervals = [];
+    for (let i = 1; i < validKeystrokes.length; i++) {
+      tapIntervals.push(validKeystrokes[i].timestamp - validKeystrokes[i-1].timestamp);
+    }
+
+    const vector: BehavioralVector = {
+      wpm: timeElapsedMinutes > 0 ? (this.currentVector.keysPressed / 5) / timeElapsedMinutes : 0,
+      accuracy: this.currentVector.keysPressed > 0 ? 
+        (this.currentVector.correctKeys / this.currentVector.keysPressed) * 100 : 0,
+      typingSpeed: timeElapsed > 0 ? this.currentVector.keysPressed / timeElapsed : 0,
+      errorRate: this.currentVector.keysPressed > 0 ? 
+        ((this.currentVector.keysPressed - this.currentVector.correctKeys) / this.currentVector.keysPressed) * 100 : 0,
+      averageKeyHoldTime: this.calculateAverage(dwellTimes),
+      averageFlightTime: this.calculateAverage(flightTimes),
+      averageKeyboardLatency: this.calculateAverage(latencies),
+      averageTapRhythm: this.calculateAverage(tapIntervals),
+      timestamp: currentTime,
+      keysPressed: this.currentVector.keysPressed,
+      correctKeys: this.currentVector.correctKeys,
+      startTime: this.currentVector.startTime
+    };
+
+    // Add to vectors array and maintain buffer size
+    this.vectors.push(vector);
+    if (this.vectors.length > this.BUFFER_SIZE) {
+      this.vectors.shift(); // Remove oldest vector
+    }
+
+    console.log('📊 Vector captured:', vector);
+
+    // Reset for next interval
+    this.currentVector = this.initializeVector();
+    this.keystrokeData = []; // Reset keystroke data for next interval
+  }
+
+  private calculateAverage(array: number[]): number {
+    if (array.length === 0) return 0;
+    return array.reduce((sum, val) => sum + val, 0) / array.length;
+  }
+
+  private calculateStandardDeviation(array: number[]): number {
+    if (array.length === 0) return 0;
+    const mean = this.calculateAverage(array);
+    const squaredDiffs = array.map(val => Math.pow(val - mean, 2));
+    return Math.sqrt(this.calculateAverage(squaredDiffs));
+  }
+
+  getFinalMetrics() {
+    if (this.vectors.length === 0) {
+      return {
+        averageMetrics: this.initializeVector(),
+        standardDeviations: this.initializeVector(),
+        vectorCount: 0
+      };
+    }
+
+    // Calculate averages and standard deviations from all vectors
+    const metrics = ['wpm', 'accuracy', 'typingSpeed', 'errorRate', 
+                    'averageKeyHoldTime', 'averageFlightTime', 
+                    'averageKeyboardLatency', 'averageTapRhythm'] as const;
+
+    const averageMetrics: any = {};
+    const standardDeviations: any = {};
+
+    metrics.forEach(metric => {
+      const values = this.vectors.map(v => v[metric]);
+      averageMetrics[metric] = this.calculateAverage(values);
+      standardDeviations[metric] = this.calculateStandardDeviation(values);
+    });
+
+    return {
+      averageMetrics,
+      standardDeviations,
+      vectorCount: this.vectors.length,
+      vectors: this.vectors
+    };
+  }
 }
 
 export default function TypingGameScreen() {
@@ -155,21 +287,14 @@ export default function TypingGameScreen() {
   const [startTime, setStartTime] = useState<number>(0);
   const [endTime, setEndTime] = useState<number>(0);
   const [keystrokeData, setKeystrokeData] = useState<EnhancedKeystrokeData[]>([]);
-  const [touchData, setTouchData] = useState<TouchData[]>([]);
-  const [sensorData, setSensorData] = useState<SensorData>({
-    accelerometer: [],
-    gyroscope: [],
-    magnetometer: [],
-    deviceOrientation: 'portrait',
-    movementPatterns: [],
-    stabilityScore: 100
-  });
   
-  // ✅ Added device metrics state with UUID
+  // ✅ NEW: Behavioral collector instance
+  const [behavioralCollector, setBehavioralCollector] = useState<BehavioralDataCollector | null>(null);
+  
   const [deviceMetrics, setDeviceMetrics] = useState<DeviceMetrics>({
     keyboardLatency: [],
     ipAddress: '',
-    deviceUUID: '', // ✅ Added UUID field
+    deviceUUID: '',
     gpsLocation: null,
     deviceInfo: {
       brand: '',
@@ -210,20 +335,10 @@ export default function TypingGameScreen() {
   const inputRef = useRef<TextInput>(null);
   const keyPressStartTime = useRef<number>(0);
   const lastKeystrokeTime = useRef<number>(0);
-  const lastTapTime = useRef<number>(0);
-  const touchStartPosition = useRef<{ x: number; y: number } | null>(null);
-  const touchStartTime = useRef<number>(0);
-  const sensorSubscriptions = useRef<any[]>([]);
-  
-  // ✅ Added refs for latency measurement
   const keyPressTimestamp = useRef<number>(0);
-  const textChangeTimestamp = useRef<number>(0);
 
   useEffect(() => {
     resetGame();
-    return () => {
-      cleanupSensors();
-    };
   }, []);
 
   useEffect(() => {
@@ -232,18 +347,14 @@ export default function TypingGameScreen() {
     }
   }, [userInput, currentText]);
 
-  // ✅ UUID generation and retrieval function
   const getOrCreateDeviceUUID = async (): Promise<string> => {
     try {
-      // Try to get existing UUID from SecureStore
       let deviceUUID = await SecureStore.getItemAsync('secure_deviceid');
       
       if (deviceUUID) {
-        // Parse the stored UUID (it's stored as JSON string)
         deviceUUID = JSON.parse(deviceUUID);
         console.log('Retrieved existing UUID:', deviceUUID);
       } else {
-        // Generate new UUID if none exists
         deviceUUID = uuidv4();
         await SecureStore.setItemAsync('secure_deviceid', JSON.stringify(deviceUUID));
         console.log('Generated new UUID:', deviceUUID);
@@ -252,96 +363,77 @@ export default function TypingGameScreen() {
       return deviceUUID;
     } catch (error) {
       console.error('Error handling device UUID:', error);
-      // Fallback to generating a new UUID
       const fallbackUUID = uuidv4();
       console.log('Using fallback UUID:', fallbackUUID);
       return fallbackUUID;
     }
   };
 
-  // ✅ Enhanced device information collection function with UUID
-const collectDeviceInfo = async (): Promise<DeviceMetrics | null> => {
-  try {
-    const deviceUUID = await getOrCreateDeviceUUID();
-
-    // Get device info
-    const deviceInfo = {
-      brand: Device.brand || 'Unknown',
-      model: Device.modelName || 'Unknown',
-      systemVersion: Device.osVersion || 'Unknown',
-      uniqueId: deviceUUID,
-      deviceType: Device.deviceType?.toString() || 'Unknown',
-      totalMemory: 0, // Optional: Update with memory module
-      usedMemory: 0,
-      batteryLevel: 1,
-      isCharging: false
-    };
-
-    // Get network info
-    const networkState = await Network.getNetworkStateAsync();
-    const networkInfo = {
-      type: networkState.type || 'unknown',
-      isConnected: networkState.isConnected ?? false,
-      isInternetReachable: networkState.isInternetReachable ?? false
-    };
-
-    // Get IP address
-    let ipAddress = 'Unknown';
+  const collectDeviceInfo = async (): Promise<DeviceMetrics | null> => {
     try {
-      const ip = await Network.getIpAddressAsync();
-      ipAddress = ip || 'Unknown';
-    } catch (error) {
-      console.warn('IP address fetch failed:', error);
-    }
+      const deviceUUID = await getOrCreateDeviceUUID();
+      
+      const deviceInfo = {
+        brand: Device.brand || 'Unknown',
+        model: Device.modelName || 'Unknown',
+        systemVersion: Device.osVersion || 'Unknown',
+        uniqueId: deviceUUID,
+        deviceType: Device.deviceType?.toString() || 'Unknown',
+        totalMemory: 0,
+        usedMemory: 0,
+        batteryLevel: 1,
+        isCharging: false
+      };
 
-    // Get GPS location
-    let gpsLocation = null;
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-        gpsLocation = {
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-          accuracy: loc.coords.accuracy || 0,
-          timestamp: loc.timestamp
-        };
+      const networkState = await Network.getNetworkStateAsync();
+      const networkInfo = {
+        type: networkState.type || 'unknown',
+        isConnected: networkState.isConnected ?? false,
+        isInternetReachable: networkState.isInternetReachable ?? false
+      };
+
+      let ipAddress = 'Unknown';
+      try {
+        const ip = await Network.getIpAddressAsync();
+        ipAddress = ip || 'Unknown';
+      } catch (error) {
+        console.warn('IP address fetch failed:', error);
       }
-    } catch (error) {
-      console.warn('GPS location fetch failed:', error);
+
+      let gpsLocation = null;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+          gpsLocation = {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            accuracy: loc.coords.accuracy || 0,
+            timestamp: loc.timestamp
+          };
+        }
+      } catch (error) {
+        console.warn('GPS location fetch failed:', error);
+      }
+
+      const deviceMetrics: DeviceMetrics = {
+        deviceUUID,
+        ipAddress,
+        deviceInfo,
+        networkInfo,
+        gpsLocation,
+        keyboardLatency: []
+      };
+
+      console.log('📱 Collected Device Metrics:', deviceMetrics);
+      setDeviceMetrics(deviceMetrics);
+
+      return deviceMetrics;
+
+    } catch (err) {
+      console.error('❌ Error collecting device info:', err);
+      return null;
     }
-
-    const deviceMetrics: DeviceMetrics = {
-      deviceUUID,
-      ipAddress,
-      deviceInfo,
-      networkInfo,
-      gpsLocation,
-      keyboardLatency: [] // Add this line to satisfy the DeviceMetrics interface
-    };
-
-    console.log('📱 Collected Device Metrics:', deviceMetrics);
-
-    return deviceMetrics;
-
-  } catch (err) {
-    console.error('❌ Error collecting device info:', err);
-    return null;
-  }
-};
-
-
-  const initializeSensors = async () => {
-    try {
-      console.log('Sensor tracking disabled - focusing on typing and device metrics only');
-    } catch (error) {
-      console.error('Error initializing sensors:', error);
-    }
-  };
-
-  const cleanupSensors = () => {
-    sensorSubscriptions.current.forEach(sub => sub.remove());
-    sensorSubscriptions.current = [];
   };
 
   const resetGame = () => {
@@ -352,15 +444,7 @@ const collectDeviceInfo = async (): Promise<DeviceMetrics | null> => {
     setGameStarted(false);
     setGameCompleted(false);
     setKeystrokeData([]);
-    setTouchData([]);
-    setSensorData({
-      accelerometer: [],
-      gyroscope: [],
-      magnetometer: [],
-      deviceOrientation: 'portrait',
-      movementPatterns: [],
-      stabilityScore: 100
-    });
+    setBehavioralCollector(null);
     setStats({
       wpm: 0,
       accuracy: 0,
@@ -378,17 +462,21 @@ const collectDeviceInfo = async (): Promise<DeviceMetrics | null> => {
       backspaceCount: 0,
       averageKeyboardLatency: 0
     });
-    cleanupSensors();
   };
 
-  const startGame = () => {
+  const startGame = async () => {
     setIsGameActive(true);
     setGameStarted(true);
     setStartTime(Date.now());
     lastKeystrokeTime.current = Date.now();
     
-    // ✅ Collect device information when game starts
-    collectDeviceInfo();
+    // ✅ Collect device information and initialize behavioral collector
+    const deviceInfo = await collectDeviceInfo();
+    if (deviceInfo) {
+      const collector = new BehavioralDataCollector(deviceInfo);
+      setBehavioralCollector(collector);
+      collector.startCollection(); // Start 6-second interval collection
+    }
     
     inputRef.current?.focus();
   };
@@ -399,16 +487,17 @@ const collectDeviceInfo = async (): Promise<DeviceMetrics | null> => {
     setIsGameActive(false);
     setGameCompleted(true);
     
-    cleanupSensors();
+    // ✅ Stop behavioral data collection
+    if (behavioralCollector) {
+      behavioralCollector.stopCollection();
+    }
     
-    const calculatedStats =  calculateComprehensiveStats(endTime);
+    const calculatedStats = calculateComprehensiveStats(endTime);
     setStats(calculatedStats);
     
-    const deviceMetrics = await collectDeviceInfo();
-    await saveBehavioralData(calculatedStats,deviceMetrics);
+    await saveBehavioralDataWithVectors(calculatedStats);
     
     inputRef.current?.blur();
-
     await AsyncStorage.setItem('typingTestCompleted', 'true');
   };
 
@@ -431,7 +520,6 @@ const collectDeviceInfo = async (): Promise<DeviceMetrics | null> => {
     const accuracy = Math.round((correctChars / currentText.length) * 100);
     const correctKeystrokes = correctChars;
     
-    // ✅ Enhanced calculations
     const keystrokeTimes = keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime).filter(t => t > 0);
     const flightTimes = keystrokeData.filter(k => k.flightTime > 0).map(k => k.flightTime);
     const backspaceCount = keystrokeData.filter(k => k.isBackspace).length;
@@ -443,19 +531,14 @@ const collectDeviceInfo = async (): Promise<DeviceMetrics | null> => {
     const speedVariance = calculateVariance(keystrokeTimes);
     const consistency = Math.max(0, 100 - (speedVariance / 100));
     
-    // Characters per minute
     const typingSpeed = Math.round((userInput.length / totalTime) * 60);
-    
-    // Error rate as percentage
     const errorRate = keystrokeData.length > 0 ? Math.round((backspaceCount / keystrokeData.length) * 100) : 0;
     
-    // Average key hold time and flight time
     const averageKeyHoldTime = keystrokeTimes.length > 0 ? 
       Math.round(keystrokeTimes.reduce((a, b) => a + b, 0) / keystrokeTimes.length) : 0;
     const averageFlightTime = flightTimes.length > 0 ? 
       Math.round(flightTimes.reduce((a, b) => a + b, 0) / flightTimes.length) : 0;
     
-    // Tap rhythm
     const tapIntervals = [];
     for (let i = 1; i < keystrokeData.length; i++) {
       tapIntervals.push(keystrokeData[i].timestamp - keystrokeData[i-1].timestamp);
@@ -463,15 +546,9 @@ const collectDeviceInfo = async (): Promise<DeviceMetrics | null> => {
     const averageTapRhythm = tapIntervals.length > 0 ? 
       Math.round(tapIntervals.reduce((a, b) => a + b, 0) / tapIntervals.length) : 0;
     
-    // ✅ Calculate average keyboard latency
     const averageKeyboardLatency = deviceMetrics.keyboardLatency.length > 0 
       ? Math.round(deviceMetrics.keyboardLatency.reduce((a, b) => a + b, 0) / deviceMetrics.keyboardLatency.length)
       : 0;
-    
-    console.log('Enhanced stats calculation:', {
-      totalTime, totalWords, wpm, correctChars, accuracy,
-      typingSpeed, errorRate, averageKeyHoldTime, averageFlightTime, averageTapRhythm, averageKeyboardLatency
-    });
     
     return {
       wpm,
@@ -492,203 +569,111 @@ const collectDeviceInfo = async (): Promise<DeviceMetrics | null> => {
     };
   };
 
-  const analyzeBehavioralPatterns = (): BehavioralMetrics => {
-    const dwellTimes = keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime).filter(t => t > 0);
-    const flightTimes = keystrokeData.filter(k => k.flightTime > 0).map(k => k.flightTime);
-    const interKeyIntervals = [];
-    
-    for (let i = 1; i < keystrokeData.length; i++) {
-      const interval = keystrokeData[i].timestamp - keystrokeData[i-1].timestamp;
-      interKeyIntervals.push(interval);
-    }
-
-    const pausePatterns = interKeyIntervals.filter(interval => interval > 500);
-    const typingBursts: number[] = [];
-    let currentBurst = 0;
-    
-    interKeyIntervals.forEach(interval => {
-      if (interval < 200) {
-        currentBurst++;
-      } else {
-        if (currentBurst > 0) {
-          typingBursts.push(currentBurst);
-          currentBurst = 0;
-        }
-      }
-    });
-
-    const concentrationLevel = calculateConcentrationLevel();
-
-    // Enhanced touch metrics
-    const swipeData = touchData.filter(t => t.type === 'swipe');
-    const tapRhythm = touchData.filter(t => t.type === 'tap').map((_, i, arr) => 
-      i > 0 ? arr[i].timestamp - arr[i-1].timestamp : 0
-    ).filter(t => t > 0);
-    
-    const averageSwipeVelocity = swipeData.length > 0 ? 
-      swipeData.reduce((sum, swipe) => sum + (swipe.velocity || 0), 0) / swipeData.length : 0;
-
-    return {
-      typingPatterns: {
-        averageDwellTime: dwellTimes.reduce((a, b) => a + b, 0) / dwellTimes.length || 0,
-        averageFlightTime: flightTimes.reduce((a, b) => a + b, 0) / flightTimes.length || 0,
-        dwellTimeVariance: calculateVariance(dwellTimes),
-        flightTimeVariance: calculateVariance(flightTimes),
-        typingRhythm: calculateTypingRhythm(),
-        interKeyInterval: interKeyIntervals.reduce((a, b) => a + b, 0) / interKeyIntervals.length || 0,
-        pausePatterns: pausePatterns,
-        speedVariation: calculateSpeedVariation(),
-        errorRate: (stats.backspaceCount / keystrokeData.length) * 100 || 0,
-        correctionPatterns: calculateCorrectionPatterns()
-      },
-      sensorData: {
-        accelerometer: [],
-        gyroscope: [],
-        magnetometer: [],
-        deviceOrientation: 'portrait',
-        movementPatterns: [],
-        stabilityScore: 100 // Default value
-      },
-      sessionMetrics: {
-        sessionDuration: (endTime - startTime) / 1000,
-        totalPauses: pausePatterns.length,
-        averagePauseLength: pausePatterns.reduce((a, b) => a + b, 0) / pausePatterns.length || 0,
-        typingBursts,
-        concentrationLevel
-      },
-      touchMetrics: {
-        swipeData,
-        tapRhythm,
-        swipeFrequency: swipeData.length,
-        averageSwipeVelocity
-      },
-      deviceMetrics // ✅ Include device metrics with UUID
-    };
-  };
-
   const calculateVariance = (data: number[]): number => {
     if (data.length === 0) return 0;
     const mean = data.reduce((a, b) => a + b, 0) / data.length;
     return data.reduce((sq, n) => sq + Math.pow(n - mean, 2), 0) / data.length;
   };
 
-  const calculateTypingRhythm = (): number => {
-    const intervals = [];
-    for (let i = 1; i < keystrokeData.length; i++) {
-      intervals.push(keystrokeData[i].timestamp - keystrokeData[i-1].timestamp);
-    }
-    return calculateVariance(intervals);
-  };
+  // ✅ NEW: Enhanced save function with behavioral vectors
+  const saveBehavioralDataWithVectors = async (typingStats: TypingStats) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        console.log('❌ No auth token found');
+        return;
+      }
 
-  const calculateSpeedVariation = (): number => {
-    const speeds = [];
-    for (let i = 0; i < keystrokeData.length - 5; i++) {
-      const timeSpan = keystrokeData[i+4].timestamp - keystrokeData[i].timestamp;
-      const speed = 5000 / timeSpan;
-      speeds.push(speed);
-    }
-    return calculateVariance(speeds);
-  };
-
-  const calculateCorrectionPatterns = (): number => {
-    return keystrokeData.filter(k => k.isBackspace).length;
-  };
-
-  const calculateConcentrationLevel = (): number => {
-    const pauseCount = keystrokeData.filter((_, i, arr) => 
-      i > 0 && (keystrokeData[i].timestamp - keystrokeData[i-1].timestamp) > 1000
-    ).length;
-    
-    const maxPauses = keystrokeData.length / 10;
-    return Math.max(0, 100 - ((pauseCount / maxPauses) * 100));
-  };
-const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
-  try {
-    const token = await AsyncStorage.getItem('token');
-    if (!token) {
-      console.log('❌ No auth token found');
-      return;
-    }
-    const sessionData = {
-      deviceMetrics: {
-        deviceUUID: deviceMetrics.deviceUUID,
-        ipAddress: deviceMetrics.ipAddress,
-        gpsLocation: {
-          latitude: deviceMetrics.gpsLocation?.latitude || 0,
-          longitude: deviceMetrics.gpsLocation?.longitude || 0,
-          accuracy: deviceMetrics.gpsLocation?.accuracy || 0,
-          timestamp: new Date(deviceMetrics.gpsLocation?.timestamp || Date.now()).toISOString()
+      // Get behavioral metrics from collector
+      const behavioralMetrics = behavioralCollector?.getFinalMetrics() || {
+        averageMetrics: {
+          wpm: 0, accuracy: 0, typingSpeed: 0, errorRate: 0,
+          averageKeyHoldTime: 0, averageFlightTime: 0,
+          averageKeyboardLatency: 0, averageTapRhythm: 0
         },
-        deviceInfo: deviceMetrics.deviceInfo,
-        networkInfo: deviceMetrics.networkInfo
-      },
-      typingStats: {
-        wpm: typingStats.wpm || 0,
-        accuracy: typingStats.accuracy || 0,
-        totalTime: typingStats.totalTime || 0,
-        totalWords: typingStats.totalWords || 0,
-        typingSpeed: typingStats.typingSpeed || 0,
-        errorRate: typingStats.errorRate || 0,
-        correctChars: typingStats.correctChars || 0,
-        averageKeyHoldTime: typingStats.averageKeyHoldTime || 0,
-        averageFlightTime: typingStats.averageFlightTime || 0,
-        averageKeyboardLatency: typingStats.averageKeyboardLatency || 0,
-        averageTapRhythm: typingStats.averageTapRhythm || 0
-      },
-      timestamp: new Date().toISOString()
-    };
+        standardDeviations: {
+          wpm: 0, accuracy: 0, typingSpeed: 0, errorRate: 0,
+          averageKeyHoldTime: 0, averageFlightTime: 0,
+          averageKeyboardLatency: 0, averageTapRhythm: 0
+        },
+        vectorCount: 0
+      };
 
-    console.log('📤 Sending sessionData:', sessionData);
+      const sessionData = {
+        deviceMetrics: {
+          deviceUUID: deviceMetrics.deviceUUID,
+          ipAddress: deviceMetrics.ipAddress,
+          gpsLocation: deviceMetrics.gpsLocation || {
+            latitude: 0,
+            longitude: 0,
+            accuracy: 0,
+            timestamp: new Date().toISOString()
+          },
+          deviceInfo: deviceMetrics.deviceInfo,
+          networkInfo: deviceMetrics.networkInfo
+        },
+        typingStats: behavioralMetrics.averageMetrics,
+        vectorStandardDeviations: behavioralMetrics.standardDeviations,
+        vectorMetadata: {
+          vectorCount: behavioralMetrics.vectorCount,
+          calculationInterval: 6000,
+          bufferSize: 5,
+          sessionId: `typing-${Date.now()}`,
+          lastCalculationTime: new Date()
+        },
+        timestamp: new Date().toISOString()
+      };
 
-    const response = await fetch(`${API_BASE_URL}/api/behavior/typing`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ sessionData }) // Must be wrapped inside { sessionData }
-    });
+      console.log('📤 Sending enhanced sessionData with vectors:', sessionData);
 
-    const result = await response.json();
+      const response = await fetch(`${API_BASE_URL}/api/behavior/typing-with-vectors`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ sessionData })
+      });
 
-    if (result.success) {
-      console.log('✅ Typing session data saved successfully:', result);
-      Alert.alert('Success', 'Your typing data has been saved securely!',[{
-        text:'OK',
-        onPress: () => {router.replace('/mpin-validation')}
-      }]);
-    } else {
-      console.error('❌ Failed to save typing session data:', result.message);
-      Alert.alert('Error', result.message || 'Failed to save typing data. Please try again.');
+      const result = await response.json();
+
+      if (result.success) {
+        console.log('✅ Enhanced typing session data with vectors saved successfully:', result);
+        Alert.alert(
+          'Success', 
+          'Your behavioral profile has been analyzed and saved securely!',
+          [{
+            text: 'OK',
+            onPress: () => { router.replace('/mpin-validation') }
+          }]
+        );
+      } else {
+        console.error('❌ Failed to save enhanced typing session data:', result.message);
+        Alert.alert('Error', result.message || 'Failed to save typing data. Please try again.');
+      }
+    } catch (error) {
+      console.error('❌ Error saving enhanced typing session data:', error);
+      Alert.alert('Error', 'Network error. Please check your connection.');
     }
-  } catch (error) {
-    console.error('❌ Error saving typing session data:', error);
-    Alert.alert('Error', 'Network error. Please check your connection.');
-  }
-};
+  };
 
-
-
-  // ✅ Enhanced handleTextChange with comprehensive tracking and latency measurement
   const handleTextChange = (text: string) => {
     if (!isGameActive) return;
     
     const currentTime = Date.now();
-    textChangeTimestamp.current = currentTime;
     
-    // ✅ Calculate keyboard latency (input lag)
+    // Calculate keyboard latency
     const inputLatency = keyPressTimestamp.current > 0 
       ? currentTime - keyPressTimestamp.current 
       : 0;
     
-    // ✅ Calculate system latency (processing time)
     const systemLatency = performance.now() - keyPressTimestamp.current;
     
     // Store latency data
     if (inputLatency > 0) {
       setDeviceMetrics(prev => ({
         ...prev,
-        keyboardLatency: [...prev.keyboardLatency.slice(-100), inputLatency] // Keep last 100 measurements
+        keyboardLatency: [...prev.keyboardLatency.slice(-100), inputLatency]
       }));
     }
     
@@ -697,10 +682,7 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
       const newChar = text[text.length - 1];
       const isCorrect = newChar === currentText[text.length - 1];
       
-      // ✅ Calculate key hold time (dwell time)
       const dwellTime = currentTime - (keyPressStartTime.current || currentTime);
-      
-      // ✅ Calculate flight time (time between last key release and current key press)
       const flightTime = lastKeystrokeTime.current > 0 
         ? currentTime - lastKeystrokeTime.current 
         : 0;
@@ -715,14 +697,20 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
         correct: isCorrect,
         position: text.length - 1,
         isBackspace: false,
-        inputLatency, // ✅ Keyboard latency
-        systemLatency, // ✅ System processing latency
+        inputLatency,
+        systemLatency,
       };
       
       setKeystrokeData(prev => [...prev, enhancedKeystrokeData]);
+      
+      // ✅ Add keystroke to behavioral collector
+      if (behavioralCollector) {
+        behavioralCollector.addKeystroke(enhancedKeystrokeData);
+      }
+      
       lastKeystrokeTime.current = currentTime;
     } 
-    // ✅ Handle backspace (character removed) - for error rate calculation
+    // Handle backspace (character removed)
     else if (text.length < userInput.length) {
       const backspaceData: EnhancedKeystrokeData = {
         key: 'Backspace',
@@ -741,18 +729,18 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
       };
       
       setKeystrokeData(prev => [...prev, backspaceData]);
+      // Note: Don't add backspace to behavioral collector as per requirements
       lastKeystrokeTime.current = currentTime;
     }
     
     setUserInput(text);
     
-    // ✅ Enhanced real-time stats calculation
+    // Update real-time stats
     if (text.length > 0) {
       const elapsedTime = (currentTime - startTime) / 1000;
       const totalWords = text.trim().split(/\s+/).length;
       const currentWPM = elapsedTime > 0 ? Math.round((totalWords / elapsedTime) * 60) : 0;
       
-      // ✅ Calculate typing speed in characters per minute
       const charactersPerMinute = elapsedTime > 0 ? Math.round((text.length / elapsedTime) * 60) : 0;
       
       let correctChars = 0;
@@ -763,13 +751,11 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
       }
       const currentAccuracy = text.length > 0 ? Math.round((correctChars / text.length) * 100) : 0;
       
-      // ✅ Calculate error rate as percentage of backspaces
       const backspaceCount = keystrokeData.filter(k => k.isBackspace).length + 
                             (text.length < userInput.length ? 1 : 0);
       const errorRate = keystrokeData.length > 0 ? 
                        Math.round((backspaceCount / keystrokeData.length) * 100) : 0;
       
-      // ✅ Calculate average key hold time and flight time
       const dwellTimes = keystrokeData.filter(k => !k.isBackspace).map(k => k.dwellTime);
       const flightTimes = keystrokeData.filter(k => k.flightTime > 0).map(k => k.flightTime);
       
@@ -778,7 +764,6 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
       const averageFlightTime = flightTimes.length > 0 ? 
                                Math.round(flightTimes.reduce((a, b) => a + b, 0) / flightTimes.length) : 0;
       
-      // ✅ Calculate tap rhythm (time between consecutive keystrokes)
       const tapIntervals = [];
       for (let i = 1; i < keystrokeData.length; i++) {
         tapIntervals.push(keystrokeData[i].timestamp - keystrokeData[i-1].timestamp);
@@ -786,12 +771,10 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
       const averageTapRhythm = tapIntervals.length > 0 ? 
                               Math.round(tapIntervals.reduce((a, b) => a + b, 0) / tapIntervals.length) : 0;
       
-      // ✅ Calculate average keyboard latency
       const averageKeyboardLatency = deviceMetrics.keyboardLatency.length > 0 
         ? Math.round(deviceMetrics.keyboardLatency.reduce((a, b) => a + b, 0) / deviceMetrics.keyboardLatency.length)
         : 0;
       
-      // Update stats in real-time
       setStats(prev => ({
         ...prev,
         wpm: currentWPM,
@@ -814,84 +797,67 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
     keyPressStartTime.current = Date.now();
   };
 
-  // ✅ Touch event handlers for swipe and tap detection
-  const handleTouchStart = (event: any) => {
-    const touch = event.nativeEvent;
-    touchStartPosition.current = { x: touch.pageX, y: touch.pageY };
-    touchStartTime.current = Date.now();
-  };
-
-  const handleTouchEnd = (event: any) => {
-    if (!touchStartPosition.current) return;
+  const renderEnhancedTextOptimized = () => {
+    const words = currentText.split(' ');
+    let charIndex = 0;
     
-    const touch = event.nativeEvent;
-    const currentTime = Date.now();
-    const duration = currentTime - touchStartTime.current;
-    const deltaX = touch.pageX - touchStartPosition.current.x;
-    const deltaY = touch.pageY - touchStartPosition.current.y;
-    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    
-    // ✅ Detect swipe vs tap based on distance and duration
-    if (distance > 50 && duration < 1000) { // Swipe detected
-      const velocity = distance / duration;
-      let direction: 'up' | 'down' | 'left' | 'right' = 'right';
-      
-      // ✅ Determine swipe direction
-      if (Math.abs(deltaX) > Math.abs(deltaY)) {
-        direction = deltaX > 0 ? 'right' : 'left';
-      } else {
-        direction = deltaY > 0 ? 'down' : 'up';
-      }
-      
-      const swipeData: TouchData = {
-        type: 'swipe',
-        timestamp: currentTime,
-        startX: touchStartPosition.current.x,
-        startY: touchStartPosition.current.y,
-        endX: touch.pageX,
-        endY: touch.pageY,
-        direction,
-        velocity,
-        duration
-      };
-      
-      setTouchData(prev => [...prev, swipeData]);
-      
-    } else if (distance < 20) { // Tap detected
-      // ✅ Calculate tap rhythm (time between taps)
-      const tapRhythm = lastTapTime.current > 0 ? currentTime - lastTapTime.current : 0;
-      
-      const tapData: TouchData = {
-        type: 'tap',
-        timestamp: currentTime,
-        startX: touchStartPosition.current.x,
-        startY: touchStartPosition.current.y,
-        duration
-      };
-      
-      setTouchData(prev => [...prev, tapData]);
-      lastTapTime.current = currentTime;
-    }
-    
-    touchStartPosition.current = null;
-  };
-
-  const renderText = () => {
-    return currentText.split('').map((char, index) => {
-      let style = styles.defaultChar;
-      
-      if (index < userInput.length) {
-        style = userInput[index] === char ? styles.correctChar : styles.incorrectChar;
-      } else if (index === userInput.length) {
-        style = styles.currentChar;
-      }
-      
-      return (
-        <Text key={index} style={style}>
-          {char}
-        </Text>
-      );
-    });
+    return (
+      <Text style={styles.textWrapper}>
+        {words.map((word, wordIndex) => {
+          const wordStart = charIndex;
+          const wordEnd = charIndex + word.length;
+          
+          const styledWord = word.split('').map((char, charInWordIndex) => {
+            const currentCharIndex = charIndex + charInWordIndex;
+            let style = styles.defaultChar;
+            
+            if (currentCharIndex < userInput.length) {
+              if (userInput[currentCharIndex] === char) {
+                style = styles.correctChar;
+              } else {
+                style = styles.incorrectChar;
+              }
+            } else if (currentCharIndex === userInput.length) {
+              style = styles.currentChar;
+            }
+            
+            return (
+              <Text key={`${wordIndex}-${charInWordIndex}`} style={style}>
+                {char}
+              </Text>
+            );
+          });
+          
+          charIndex += word.length;
+          
+          const spaceStyle = (() => {
+            if (wordIndex < words.length - 1) {
+              if (charIndex < userInput.length) {
+                const spaceCorrect = userInput[charIndex] === ' ';
+                charIndex++;
+                return spaceCorrect ? styles.correctChar : styles.incorrectChar;
+              } else if (charIndex === userInput.length) {
+                charIndex++;
+                return styles.currentChar;
+              } else {
+                charIndex++;
+                return styles.defaultChar;
+              }
+            }
+            return null;
+          })();
+          
+          return (
+            <Text key={wordIndex}>
+              {styledWord}
+              {wordIndex < words.length - 1 && (
+                <Text style={spaceStyle || styles.defaultChar}> </Text>
+              )}
+            </Text>
+          );
+        })}
+      </Text>
+    );
   };
 
   const getWPMColor = (wpm: number) => {
@@ -922,7 +888,7 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
         </TouchableOpacity>
         
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Typing Speed Test</Text>
+          <Text style={styles.headerTitle}>CanGuard Typing Dojo</Text>
           <Text style={styles.headerSubtitle}>Behavioral Authentication Training</Text>
         </View>
 
@@ -935,7 +901,7 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
       </LinearGradient>
 
       <ScrollView style={styles.content}>
-        {/* ✅ Enhanced Game Stats with new metrics including keyboard latency */}
+        {/* ✅ Enhanced Game Stats with behavioral metrics */}
         {gameStarted && (
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
@@ -965,14 +931,23 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
           </View>
         )}
 
+        {/* ✅ Behavioral Collection Status */}
+        {gameStarted && behavioralCollector && (
+          <View style={styles.behavioralStatusContainer}>
+            <Text style={styles.behavioralStatusText}>
+              🔄 Collecting behavioral data every 6 seconds...
+            </Text>
+          </View>
+        )}
+
         {/* Text Display */}
         <View style={styles.textContainer}>
           <View style={styles.textDisplay}>
-            {renderText()}
+            {renderEnhancedTextOptimized()}
           </View>
         </View>
 
-        {/* ✅ Enhanced Input Field with touch tracking */}
+        {/* Input Field */}
         <View style={styles.inputContainer}>
           <TextInput
             ref={inputRef}
@@ -980,8 +955,6 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
             value={userInput}
             onChangeText={handleTextChange}
             onKeyPress={handleKeyPress}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
             placeholder={gameStarted ? "Start typing..." : "Press Start to begin"}
             multiline
             editable={isGameActive}
@@ -991,7 +964,7 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
           />
         </View>
 
-        {/* ✅ Device & Network Info Display with UUID */}
+        {/* Device & Network Info Display */}
         {gameStarted && (
           <View style={styles.deviceInfoContainer}>
             <Text style={styles.deviceInfoTitle}>Device & Network Information</Text>
@@ -1058,15 +1031,14 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
           )}
         </View>
 
-        {/* ✅ Enhanced Results with new metrics */}
+        {/* Enhanced Results with behavioral data confirmation */}
         {gameCompleted && (
           <View style={styles.resultsContainer}>
             <Text style={styles.resultsTitle}>🎉 Test Complete!</Text>
             
-            {/* Success message */}
             <View style={styles.successMessage}>
               <Text style={styles.successText}>
-                Great job! Your behavioral profile has been analyzed and saved securely.
+                Great job! Your behavioral profile has been analyzed with {behavioralCollector?.getFinalMetrics().vectorCount || 0} behavioral vectors and saved securely.
               </Text>
             </View>
             
@@ -1106,7 +1078,6 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
               </View>
             </View>
 
-            {/* Action buttons for user navigation */}
             <View style={styles.actionButtons}>
               <TouchableOpacity style={styles.continueButton} onPress={() => router.replace('/(tabs)')}>
                 <LinearGradient
@@ -1129,11 +1100,10 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
               </TouchableOpacity>
             </View>
 
-            {/* Additional info */}
             <View style={styles.infoSection}>
               <Text style={styles.infoText}>
-                Your typing patterns and device metrics have been analyzed for enhanced security. 
-                You can now proceed to the banking app or take the test again.
+                Your typing patterns and device metrics have been analyzed using advanced behavioral biometrics. 
+                The system collected data every 6 seconds and calculated statistical profiles for enhanced security.
               </Text>
             </View>
           </View>
@@ -1146,7 +1116,7 @@ const saveBehavioralData = async (typingStats: any, deviceMetrics: any) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#F5F7FA',
   },
   header: {
     flexDirection: 'row',
@@ -1154,34 +1124,39 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     paddingBottom: 20,
     paddingHorizontal: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
   backButton: {
     padding: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 12,
   },
   headerContent: {
     flex: 1,
     alignItems: 'center',
   },
   skipButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 12,
   },
   skipButtonText: {
     color: '#fff',
-    fontSize: 14,
     fontWeight: '600',
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 26,
+    fontWeight: '800',
     color: '#fff',
     marginBottom: 4,
+    letterSpacing: 0.5,
   },
   headerSubtitle: {
     fontSize: 16,
-    color: '#E8F4FD',
+    color: 'rgba(255, 255, 255, 0.9)',
+    letterSpacing: 0.3,
   },
   content: {
     flex: 1,
@@ -1192,47 +1167,278 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-around',
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: '#2D3748',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 12,
+    elevation: 4,
   },
   statItem: {
     alignItems: 'center',
     minWidth: '30%',
-    marginBottom: 8,
+    marginBottom: 12,
+    padding: 8,
   },
   statValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#2D3748',
+    marginBottom: 4,
   },
   statLabel: {
-    fontSize: 10,
-    color: '#666',
-    marginTop: 4,
+    fontSize: 12,
+    color: '#718096',
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  deviceInfoContainer: {
-    backgroundColor: '#fff',
+  // ✅ NEW: Behavioral status container
+  behavioralStatusContainer: {
+    backgroundColor: '#E6FFFA',
     borderRadius: 12,
     padding: 16,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#38B2AC',
   },
-  deviceInfoTitle: {
+  behavioralStatusText: {
+    color: '#2C7A7B',
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  textContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 20,
+    shadowColor: '#2D3748',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  textDisplay: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    width: '100%',
+  },
+  textWrapper: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    lineHeight: 32,
+    fontSize: 20,
+  },
+  defaultChar: {
+    fontSize: 20,
+    color: '#718096',
+    lineHeight: 32,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  correctChar: {
+    fontSize: 20,
+    color: '#48BB78',
+    backgroundColor: '#F0FFF4',
+    lineHeight: 32,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  incorrectChar: {
+    fontSize: 20,
+    color: '#E53E3E',
+    backgroundColor: '#FFF5F5',
+    lineHeight: 32,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  currentChar: {
+    fontSize: 20,
+    color: '#2D3748',
+    backgroundColor: '#FEEBC8',
+    lineHeight: 32,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    borderRadius: 4,
+  },
+  inputContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 20,
+    shadowColor: '#2D3748',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  textInput: {
+    fontSize: 18,
+    padding: 20,
+    minHeight: 120,
+    textAlignVertical: 'top',
+    color: '#2D3748',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  controlsContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  startButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    width: '100%',
+    maxWidth: 320,
+    shadowColor: '#ED8936',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  resetButton: {
+    backgroundColor: '#E2E8F0',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  resetButtonText: {
+    color: '#2D3748',
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
+  },
+  buttonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginLeft: 12,
+    letterSpacing: 0.5,
+  },
+  resultsContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#2D3748',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  resultsTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#2D3748',
     textAlign: 'center',
+    marginBottom: 24,
+    letterSpacing: 0.5,
+  },
+  successMessage: {
+    backgroundColor: '#F0FFF4',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#48BB78',
+  },
+  successText: {
+    color: '#2F855A',
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    letterSpacing: 0.3,
+  },
+  resultGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  resultItem: {
+    width: '48%',
+    alignItems: 'center',
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: '#F7FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  resultLabel: {
+    fontSize: 14,
+    color: '#718096',
+    marginBottom: 6,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  resultValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#2D3748',
+  },
+  actionButtons: {
+    gap: 16,
+    marginTop: 24,
+    width: '100%',
+  },
+  continueButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#3182CE',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  playAgainButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#ED8936',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  infoSection: {
+    backgroundColor: '#F7FAFC',
+    borderRadius: 12,
+    padding: 20,
+    marginTop: 24,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  infoText: {
+    color: '#718096',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    letterSpacing: 0.3,
+  },
+  deviceInfoContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 20,
+    shadowColor: '#2D3748',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  deviceInfoTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2D3748',
+    marginBottom: 16,
+    textAlign: 'center',
+    letterSpacing: 0.5,
   },
   deviceInfoGrid: {
     flexDirection: 'row',
@@ -1241,198 +1447,25 @@ const styles = StyleSheet.create({
   },
   deviceInfoItem: {
     width: '48%',
-    marginBottom: 12,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#F7FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   deviceInfoLabel: {
     fontSize: 12,
-    color: '#666',
-    marginBottom: 2,
+    color: '#718096',
+    marginBottom: 4,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   deviceInfoValue: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#333',
-  },
-  textContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  textDisplay: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    lineHeight: 28,
-  },
-  defaultChar: {
-    fontSize: 18,
-    color: '#666',
-    lineHeight: 28,
-  },
-  correctChar: {
-    fontSize: 18,
-    color: '#4CAF50',
-    backgroundColor: '#E8F5E8',
-    lineHeight: 28,
-  },
-  incorrectChar: {
-    fontSize: 18,
-    color: '#F44336',
-    backgroundColor: '#FFEBEE',
-    lineHeight: 28,
-  },
-  currentChar: {
-    fontSize: 18,
-    color: '#333',
-    backgroundColor: '#FFB600',
-    lineHeight: 28,
-  },
-  inputContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  textInput: {
-    fontSize: 16,
-    padding: 16,
-    minHeight: 100,
-    textAlignVertical: 'top',
-    color: '#333',
-  },
-  controlsContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  startButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#FFB600',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  resetButton: {
-    backgroundColor: '#666',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-  },
-  resetButtonText: {
-    color: '#fff',
-    fontSize: 16,
     fontWeight: '600',
-  },
-  buttonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  resultsContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  resultsTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  successMessage: {
-    backgroundColor: '#E8F5E8',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#4CAF50',
-  },
-  successText: {
-    color: '#2E7D32',
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  resultGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  resultItem: {
-    width: '48%',
-    alignItems: 'center',
-    marginBottom: 16,
-    padding: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-  },
-  resultLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  resultValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  actionButtons: {
-    gap: 12,
-    marginTop: 20,
-  },
-  continueButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#019EEC',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  playAgainButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#FFB600',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  infoSection: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-    padding: 16,
-    marginTop: 20,
-  },
-  infoText: {
-    color: '#666',
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
+    color: '#2D3748',
+    letterSpacing: 0.3,
   },
 });
