@@ -85,6 +85,19 @@ interface BehavioralVector {
   startTime: number;
 }
 
+interface FraudDetectionResult {
+  decision: 'PASS' | 'ESCALATE_T2' | 'ESCALATE_T3' | 'SKIP';
+  anomalyScore: number | null;
+  ruleFlags: string[];
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  confidence: number;
+}
+
+interface LocationData {
+  latitude: number;
+  longitude: number;
+}
+
 class BehavioralDataCollector {
   private vectors: BehavioralVector[] = [];
   private currentVector: BehavioralVector;
@@ -94,10 +107,18 @@ class BehavioralDataCollector {
   private collectionInterval: NodeJS.Timeout | null = null;
   private readonly COLLECTION_INTERVAL = 6000; // 6 seconds
   private readonly BUFFER_SIZE = 5; // Latest 5 vectors
+  
+  // **NEW: Fraud Detection Integration**
+  private fraudDetectionCallback: ((vector: BehavioralVector) => void) | null = null;
+  private realTimeStatsCallback: ((stats: BehavioralVector) => void) | null = null;
+  private sessionStartTime: number = 0;
+  private totalKeystrokesInSession: number = 0;
+  private totalCorrectKeysInSession: number = 0;
 
   constructor(deviceMetrics: DeviceMetrics) {
     this.deviceMetrics = deviceMetrics;
     this.currentVector = this.initializeVector();
+    this.sessionStartTime = Date.now();
   }
 
   private initializeVector(): BehavioralVector {
@@ -117,41 +138,82 @@ class BehavioralDataCollector {
     };
   }
 
+  // **NEW: Set fraud detection callback**
+  setFraudDetectionCallback(callback: (vector: BehavioralVector) => void) {
+    this.fraudDetectionCallback = callback;
+  }
+
+  // **NEW: Set real-time stats callback**
+  setRealTimeStatsCallback(callback: (stats: BehavioralVector) => void) {
+    this.realTimeStatsCallback = callback;
+  }
+
   startCollection() {
     this.isCollecting = true;
     this.currentVector = this.initializeVector();
+    this.sessionStartTime = Date.now();
+    this.totalKeystrokesInSession = 0;
+    this.totalCorrectKeysInSession = 0;
+    
     this.collectionInterval = setInterval(() => {
       this.captureVector();
     }, this.COLLECTION_INTERVAL);
+    
     console.log('🔄 Behavioral data collection started (6-second intervals)');
+    
+    // **NEW: Start real-time stats updates**
+    this.startRealTimeStatsUpdates();
   }
 
   stopCollection() {
     this.isCollecting = false;
+    
     if (this.collectionInterval) {
       clearInterval(this.collectionInterval);
       this.collectionInterval = null;
     }
+    
+    // Capture final vector if there's data
     if (this.currentVector.keysPressed > 0) {
       this.captureVector();
     }
+    
     console.log('⏹️ Behavioral data collection stopped');
+    console.log(`📈 Session Summary: ${this.totalKeystrokesInSession} keystrokes, ${this.vectors.length} vectors captured`);
   }
 
   addKeystroke(keystroke: EnhancedKeystrokeData) {
     if (!this.isCollecting) return;
-    if (keystroke.isBackspace) return; // Exclude backspace
     
+    // Always add keystroke to data (including backspace for analysis)
     this.keystrokeData.push(keystroke);
-    this.currentVector.keysPressed++;
-    if (keystroke.correct) {
-      this.currentVector.correctKeys++;
+    
+    if (!keystroke.isBackspace) {
+      this.currentVector.keysPressed++;
+      this.totalKeystrokesInSession++;
+      
+      if (keystroke.correct) {
+        this.currentVector.correctKeys++;
+        this.totalCorrectKeysInSession++;
+      }
     }
+    
+    // **NEW: Update real-time stats immediately**
+    this.updateRealTimeStats();
   }
 
-  private captureVector() {
-    if (this.currentVector.keysPressed === 0) return;
-    
+  // **NEW: Real-time stats updates**
+  private startRealTimeStatsUpdates() {
+    setInterval(() => {
+      if (this.isCollecting && this.realTimeStatsCallback) {
+        const currentStats = this.calculateCurrentStats();
+        this.realTimeStatsCallback(currentStats);
+      }
+    }, 1000); // Update every second for real-time feedback
+  }
+
+  // **NEW: Calculate current typing statistics**
+  private calculateCurrentStats(): BehavioralVector {
     const currentTime = Date.now();
     const timeElapsed = (currentTime - this.currentVector.startTime) / 1000;
     const timeElapsedMinutes = timeElapsed / 60;
@@ -166,7 +228,7 @@ class BehavioralDataCollector {
       tapIntervals.push(validKeystrokes[i].timestamp - validKeystrokes[i-1].timestamp);
     }
 
-    const vector: BehavioralVector = {
+    return {
       wpm: timeElapsedMinutes > 0 ? (this.currentVector.keysPressed / 5) / timeElapsedMinutes : 0,
       accuracy: this.currentVector.keysPressed > 0 ? 
         (this.currentVector.correctKeys / this.currentVector.keysPressed) * 100 : 0,
@@ -182,15 +244,43 @@ class BehavioralDataCollector {
       correctKeys: this.currentVector.correctKeys,
       startTime: this.currentVector.startTime
     };
+  }
 
+  // **UPDATED: Enhanced vector capture with fraud detection**
+  private captureVector() {
+    if (this.currentVector.keysPressed === 0) return;
+    
+    const vector = this.calculateCurrentStats();
+    
+    // Store vector
     this.vectors.push(vector);
     if (this.vectors.length > this.BUFFER_SIZE) {
       this.vectors.shift();
     }
 
-    console.log('📊 Vector captured:', vector);
+    console.log('📊 Vector captured:', {
+      ...vector,
+      wpm: Math.round(vector.wpm * 100) / 100,
+      accuracy: Math.round(vector.accuracy * 100) / 100,
+      errorRate: Math.round(vector.errorRate * 100) / 100
+    });
+
+    // **NEW: Trigger fraud detection analysis**
+    if (this.fraudDetectionCallback) {
+      this.fraudDetectionCallback(vector);
+    }
+
+    // Reset for next collection interval
     this.currentVector = this.initializeVector();
     this.keystrokeData = [];
+  }
+
+  // **NEW: Real-time stats update method**
+  private updateRealTimeStats() {
+    if (this.realTimeStatsCallback && this.currentVector.keysPressed > 0) {
+      const currentStats = this.calculateCurrentStats();
+      this.realTimeStatsCallback(currentStats);
+    }
   }
 
   private calculateAverage(array: number[]): number {
@@ -205,12 +295,15 @@ class BehavioralDataCollector {
     return Math.sqrt(this.calculateAverage(squaredDiffs));
   }
 
+  // **ENHANCED: More comprehensive final metrics**
   getFinalMetrics() {
     if (this.vectors.length === 0) {
       return {
         averageMetrics: this.initializeVector(),
         standardDeviations: this.initializeVector(),
-        vectorCount: 0
+        vectorCount: 0,
+        sessionMetrics: this.getSessionMetrics(),
+        vectors: []
       };
     }
 
@@ -227,11 +320,345 @@ class BehavioralDataCollector {
       standardDeviations[metric] = this.calculateStandardDeviation(values);
     });
 
+    // Add metadata
+    averageMetrics.timestamp = Date.now();
+    averageMetrics.keysPressed = this.totalKeystrokesInSession;
+    averageMetrics.correctKeys = this.totalCorrectKeysInSession;
+    averageMetrics.startTime = this.sessionStartTime;
+
     return {
       averageMetrics,
       standardDeviations,
       vectorCount: this.vectors.length,
-      vectors: this.vectors
+      sessionMetrics: this.getSessionMetrics(),
+      vectors: this.vectors.slice() // Return copy
+    };
+  }
+
+  // **NEW: Session-level metrics**
+  private getSessionMetrics() {
+    const sessionDuration = (Date.now() - this.sessionStartTime) / 1000;
+    const sessionDurationMinutes = sessionDuration / 60;
+    
+    return {
+      sessionDuration: sessionDuration,
+      totalKeystrokes: this.totalKeystrokesInSession,
+      totalCorrectKeys: this.totalCorrectKeysInSession,
+      overallAccuracy: this.totalKeystrokesInSession > 0 ? 
+        (this.totalCorrectKeysInSession / this.totalKeystrokesInSession) * 100 : 0,
+      overallWPM: sessionDurationMinutes > 0 ? 
+        (this.totalKeystrokesInSession / 5) / sessionDurationMinutes : 0,
+      overallErrorRate: this.totalKeystrokesInSession > 0 ? 
+        ((this.totalKeystrokesInSession - this.totalCorrectKeysInSession) / this.totalKeystrokesInSession) * 100 : 0,
+      vectorsCaptured: this.vectors.length,
+      averageKeysPerVector: this.vectors.length > 0 ? 
+        this.vectors.reduce((sum, v) => sum + v.keysPressed, 0) / this.vectors.length : 0
+    };
+  }
+
+  // **NEW: Get latest vector for real-time analysis**
+  getLatestVector(): BehavioralVector | null {
+    return this.vectors.length > 0 ? this.vectors[this.vectors.length - 1] : null;
+  }
+
+  // **NEW: Get session consistency score**
+  getConsistencyScore(): number {
+    if (this.vectors.length < 2) return 0;
+    
+    const wpmValues = this.vectors.map(v => v.wpm);
+    const accuracyValues = this.vectors.map(v => v.accuracy);
+    
+    const wpmStdDev = this.calculateStandardDeviation(wpmValues);
+    const accuracyStdDev = this.calculateStandardDeviation(accuracyValues);
+    const wpmMean = this.calculateAverage(wpmValues);
+    const accuracyMean = this.calculateAverage(accuracyValues);
+    
+    // Calculate coefficient of variation (lower = more consistent)
+    const wpmCV = wpmMean > 0 ? wpmStdDev / wpmMean : 0;
+    const accuracyCV = accuracyMean > 0 ? accuracyStdDev / accuracyMean : 0;
+    
+    // Convert to consistency score (0-100, higher = more consistent)
+    const consistencyScore = Math.max(0, 100 - ((wpmCV + accuracyCV) * 50));
+    
+    return Math.round(consistencyScore);
+  }
+
+  // **NEW: Reset collector for new session**
+  reset() {
+    this.stopCollection();
+    this.vectors = [];
+    this.keystrokeData = [];
+    this.currentVector = this.initializeVector();
+    this.sessionStartTime = Date.now();
+    this.totalKeystrokesInSession = 0;
+    this.totalCorrectKeysInSession = 0;
+    console.log('🔄 Behavioral data collector reset');
+  }
+
+  // **NEW: Get typing pattern analysis**
+  getTypingPatternAnalysis() {
+    if (this.vectors.length === 0) return null;
+    
+    const latestVector = this.vectors[this.vectors.length - 1];
+    const consistencyScore = this.getConsistencyScore();
+    
+    return {
+      currentVector: latestVector,
+      consistencyScore,
+      isTypingFast: latestVector.wpm > 40,
+      isTypingAccurate: latestVector.accuracy > 90,
+      hasLowLatency: latestVector.averageKeyboardLatency < 50,
+      typingRhythm: this.analyzeTypingRhythm(),
+      riskFactors: this.identifyRiskFactors()
+    };
+  }
+
+  // **NEW: Analyze typing rhythm patterns**
+  private analyzeTypingRhythm() {
+    if (this.vectors.length === 0) return { pattern: 'insufficient_data', score: 0 };
+    
+    const rhythmValues = this.vectors.map(v => v.averageTapRhythm);
+    const stdDev = this.calculateStandardDeviation(rhythmValues);
+    const mean = this.calculateAverage(rhythmValues);
+    
+    let pattern = 'consistent';
+    if (stdDev > mean * 0.3) pattern = 'variable';
+    if (stdDev > mean * 0.5) pattern = 'erratic';
+    
+    return {
+      pattern,
+      score: Math.max(0, 100 - (stdDev / mean) * 100),
+      meanRhythm: mean,
+      variability: stdDev
+    };
+  }
+
+  // **NEW: Identify potential risk factors**
+  private identifyRiskFactors(): string[] {
+    const factors: string[] = [];
+    
+    if (this.vectors.length === 0) return factors;
+    
+    const latest = this.vectors[this.vectors.length - 1];
+    const sessionMetrics = this.getSessionMetrics();
+    
+    if (latest.wpm > 120 || latest.wpm < 10) {
+      factors.push('unusual_typing_speed');
+    }
+    
+    if (latest.accuracy < 70) {
+      factors.push('low_accuracy');
+    }
+    
+    if (latest.errorRate > 20) {
+      factors.push('high_error_rate');
+    }
+    
+    if (latest.averageKeyboardLatency > 200) {
+      factors.push('high_latency');
+    }
+    
+    if (this.getConsistencyScore() < 30) {
+      factors.push('inconsistent_patterns');
+    }
+    
+    if (sessionMetrics.averageKeysPerVector < 5) {
+      factors.push('insufficient_typing_data');
+    }
+    
+    return factors;
+  }
+}
+
+
+class FraudDetectionEngine {
+  private readonly THRESHOLD_PASS = 1.5;
+  private readonly THRESHOLD_ESCALATE_T2 = 2.5;
+  private readonly IDLE_THRESHOLD = 3;
+  private idleCount = 0;
+
+  private haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371.0; // Earth's radius in km
+    const toRadians = (degrees: number) => degrees * (Math.PI / 180);
+    
+    const dlat = toRadians(lat2 - lat1);
+    const dlon = toRadians(lon2 - lon1);
+    const a = Math.sin(dlat/2)**2 + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dlon/2)**2;
+    
+    return 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * R;
+  }
+
+  private estimateStandardDeviation(referenceVector: number[]): number[] {
+    return referenceVector.map(val => Math.max(0.01, Math.abs(val * 0.10))); // 10% tolerance
+  }
+
+  private computeAnomalyScore(
+    currentVector: BehavioralVector, 
+    referenceVector: BehavioralVector, 
+    age: number
+  ): { score: number | null; zScores: number[] | null } {
+    
+    // Create arrays from behavioral vectors for comparison
+    const current = [
+      currentVector.wpm,
+      currentVector.averageFlightTime,
+      currentVector.typingSpeed,
+      currentVector.accuracy,
+      currentVector.averageKeyHoldTime,
+      currentVector.errorRate,
+      currentVector.averageKeyboardLatency,
+      currentVector.averageTapRhythm,
+      currentVector.keysPressed,
+      currentVector.correctKeys
+    ];
+
+    const reference = [
+      referenceVector.wpm,
+      referenceVector.averageFlightTime,
+      referenceVector.typingSpeed,
+      referenceVector.accuracy,
+      referenceVector.averageKeyHoldTime,
+      referenceVector.errorRate,
+      referenceVector.averageKeyboardLatency,
+      referenceVector.averageTapRhythm,
+      referenceVector.keysPressed,
+      referenceVector.correctKeys
+    ];
+
+    // Skip if insufficient data
+    const nonZeroCount = current.filter(val => val > 0).length;
+    if (nonZeroCount < 4) {
+      return { score: null, zScores: null };
+    }
+
+    const standardDeviations = this.estimateStandardDeviation(reference);
+    const zScores = current.map((val, idx) => 
+      Math.abs((val - reference[idx]) / (standardDeviations[idx] + 1e-8))
+    );
+
+    const ageBoost = age >= 60 ? 1.15 : 1.0;
+    const anomalyScore = (zScores.reduce((sum, z) => sum + z, 0) / zScores.length) * ageBoost;
+
+    return { score: anomalyScore, zScores };
+  }
+
+  private performRuleBasedChecks(
+    currentVector: BehavioralVector,
+    lastLoginLocation: LocationData,
+    currentLocation: LocationData,
+    previousLocation: LocationData,
+    latestLocation: LocationData
+  ): { flags: string[]; travelSpeed: number } {
+    const flags: string[] = [];
+
+    // 1. Unusual login location check
+    const loginDistance = this.haversineDistance(
+      lastLoginLocation.latitude, lastLoginLocation.longitude,
+      currentLocation.latitude, currentLocation.longitude
+    );
+    
+    if (loginDistance > 10) {
+      flags.push(`Login from unusual distant location (${loginDistance.toFixed(1)}km away)`);
+    }
+
+    // 2. Travel speed analysis
+    const sessionDistance = this.haversineDistance(
+      previousLocation.latitude, previousLocation.longitude,
+      latestLocation.latitude, latestLocation.longitude
+    );
+    
+    const sessionTimeHours = 30 / 3600; // 30 seconds in hours
+    const travelSpeed = sessionDistance / sessionTimeHours;
+    
+    if (travelSpeed > 80) {
+      flags.push(`Abnormal travel speed detected: ${travelSpeed.toFixed(1)} km/h`);
+    }
+
+    // 3. Behavioral threshold checks
+    if (currentVector.accuracy > 0 && (currentVector.accuracy < 50 || currentVector.accuracy > 98)) {
+      flags.push(`Unusual typing accuracy: ${currentVector.accuracy.toFixed(1)}%`);
+    }
+    
+    if (currentVector.averageFlightTime > 600) {
+      flags.push(`Flight time too high: ${currentVector.averageFlightTime.toFixed(1)}ms`);
+    }
+    
+    if (currentVector.errorRate > 10) {
+      flags.push(`Error rate too high: ${currentVector.errorRate.toFixed(1)}%`);
+    }
+
+    if (currentVector.wpm > 0 && (currentVector.wpm < 20 || currentVector.wpm > 120)) {
+      flags.push(`Unusual typing speed: ${currentVector.wpm.toFixed(1)} WPM`);
+    }
+
+    return { flags, travelSpeed };
+  }
+
+  public analyzeTransaction(
+    currentMetrics: BehavioralVector,
+    referenceData: BehavioralVector,
+    userAge: number,
+    locationData: {
+      lastLogin: LocationData;
+      current: LocationData;
+      previous: LocationData;
+      latest: LocationData;
+    }
+  ): FraudDetectionResult {
+    
+    const { score: anomalyScore, zScores } = this.computeAnomalyScore(
+      currentMetrics, 
+      referenceData, 
+      userAge
+    );
+
+    const { flags: ruleFlags, travelSpeed } = this.performRuleBasedChecks(
+      currentMetrics,
+      locationData.lastLogin,
+      locationData.current,
+      locationData.previous,
+      locationData.latest
+    );
+
+    let decision: FraudDetectionResult['decision'];
+    let riskLevel: FraudDetectionResult['riskLevel'];
+    let confidence: number;
+
+    if (anomalyScore === null) {
+      this.idleCount++;
+      if (this.idleCount >= this.IDLE_THRESHOLD && travelSpeed > 80) {
+        decision = 'ESCALATE_T2';
+        riskLevel = 'MEDIUM';
+        confidence = 0.7;
+      } else {
+        decision = 'SKIP';
+        riskLevel = 'LOW';
+        confidence = 0.5;
+      }
+    } else {
+      this.idleCount = 0;
+      
+      if (anomalyScore < this.THRESHOLD_PASS && ruleFlags.length === 0) {
+        decision = 'PASS';
+        riskLevel = 'LOW';
+        confidence = 0.9;
+      } else if (anomalyScore < this.THRESHOLD_ESCALATE_T2 || ruleFlags.length > 0) {
+        decision = 'ESCALATE_T2';
+        riskLevel = 'MEDIUM';
+        confidence = Math.min(0.8, anomalyScore / this.THRESHOLD_ESCALATE_T2);
+      } else {
+        decision = 'ESCALATE_T3';
+        riskLevel = 'HIGH';
+        confidence = Math.min(0.95, anomalyScore / this.THRESHOLD_ESCALATE_T2);
+      }
+    }
+
+    return {
+      decision,
+      anomalyScore,
+      ruleFlags,
+      riskLevel,
+      confidence: Math.round(confidence * 100) / 100
     };
   }
 }
@@ -285,6 +712,11 @@ export default function SendMoneyScreen() {
   const keyPressTimestamp = useRef(0);
   const [behavioralData, setBehavioralData] = useState<BehavioralDataResponse | null>(null);
 
+  const [fraudDetectionEngine] = useState(() => new FraudDetectionEngine());
+  const [fraudAnalysis, setFraudAnalysis] = useState<FraudDetectionResult | null>(null);
+  const [userAge] = useState(65); // You can get this from user profile
+  const [isTransactionBlocked, setIsTransactionBlocked] = useState(false);
+
   const fetchBehavioralData = async () => {
   try {
     const data = await getBehavioralData();
@@ -296,7 +728,6 @@ export default function SendMoneyScreen() {
   }
 };
 
-
   useEffect(() => {
     fetchBehavioralData();
     initializeBehavioralCollection();
@@ -306,9 +737,6 @@ export default function SendMoneyScreen() {
       }
     };
   }, []);
-
-
-
 
   const getOrCreateDeviceUUID = async (): Promise<string> => {
     try {
@@ -497,176 +925,497 @@ export default function SendMoneyScreen() {
     keyPressStartTime.current = Date.now();
   };
 
-  const handleSendMoney = async () => {
-    const isValid = true;
-    if (isValid) {
+  const performFraudAnalysis = (currentVector: BehavioralVector) => {
+    if (!behavioralData || !deviceMetrics.gpsLocation) return;
+
+    const locationData = {
+      lastLogin: { latitude: 28.7041, longitude: 77.1025 }, // Delhi - get from user session
+      current: { 
+        latitude: deviceMetrics.gpsLocation.latitude, 
+        longitude: deviceMetrics.gpsLocation.longitude 
+      },
+      previous: { 
+        latitude: deviceMetrics.gpsLocation.latitude, 
+        longitude: deviceMetrics.gpsLocation.longitude 
+      },
+      latest: { 
+        latitude: deviceMetrics.gpsLocation.latitude, 
+        longitude: deviceMetrics.gpsLocation.longitude 
+      }
+    };
+
+    // Use stored behavioral data as reference
+    const referenceVector: BehavioralVector = {
+      wpm: behavioralData.averageWpm || 79,
+      accuracy: behavioralData.averageAccuracy || 330,
+      typingSpeed: behavioralData.averageTypingSpeed || 9,
+      errorRate: behavioralData.averageErrorRate || 278,
+      averageKeyHoldTime: behavioralData.averageKeyHoldTime || 74,
+      averageFlightTime: behavioralData.averageFlightTime || 5,
+      averageKeyboardLatency: behavioralData.averageKeyboardLatency || 34.32,
+      averageTapRhythm: behavioralData.averageTapRhythm || 13,
+      keysPressed: behavioralData.averageKeysPressed || 154,
+      correctKeys: behavioralData.averageCorrectKeys || 23,
+      timestamp: Date.now(),
+      startTime: Date.now()
+    };
+
+    const analysis = fraudDetectionEngine.analyzeTransaction(
+      currentVector,
+      referenceVector,
+      userAge,
+      locationData
+    );
+
+    setFraudAnalysis(analysis);
+
+    // Handle security decisions
+    handleSecurityDecision(analysis);
+  };
+
+   const handleSecurityDecision = (analysis: FraudDetectionResult) => {
+    switch (analysis.decision) {
+      case 'PASS':
+        setIsTransactionBlocked(false);
+        console.log('✅ Transaction approved - Low risk');
+        break;
+        
+      case 'ESCALATE_T2':
+        setIsTransactionBlocked(true);
+        Alert.alert(
+          'Additional Verification Required',
+          `Security check detected unusual patterns:\n\n${analysis.ruleFlags.join('\n')}\n\nPlease verify your identity with additional authentication.`,
+          [
+            { text: 'Cancel Transaction', style: 'cancel' },
+            { text: 'Verify Identity', onPress: () => handleAdditionalVerification() }
+          ]
+        );
+        break;
+        
+      case 'ESCALATE_T3':
+        setIsTransactionBlocked(true);
+        Alert.alert(
+          'Transaction Blocked',
+          `High-risk activity detected. Transaction has been blocked for security reasons.\n\nRisk factors:\n${analysis.ruleFlags.join('\n')}\n\nPlease contact customer support.`,
+          [{ text: 'OK', onPress: () => router.back() }]
+        );
+        break;
+        
+      case 'SKIP':
+        console.log('⏸️ Insufficient data for analysis');
+        break;
+    }
+  };
+
+  const handleAdditionalVerification = () => {
+    console.log('🔐 Initiating additional verification...');
+    setIsTransactionBlocked(false);
+  };
+
+ const handleSendMoney = async () => {
+    if (isTransactionBlocked) {
+      Alert.alert(
+        'Transaction Blocked',
+        'This transaction has been blocked due to security concerns. Please complete additional verification first.'
+      );
+      return;
+    }
+
+    if (fraudAnalysis && fraudAnalysis.riskLevel === 'HIGH') {
+      Alert.alert(
+        'High Risk Transaction',
+        'This transaction has been flagged as high risk. Please contact customer support.'
+      );
+      return;
+    }
+
+    else{
       Alert.alert(
         'Success',
         'Transaction processed successfully!',
         [{ text: 'OK', onPress: () => router.back() }]
       );
-    } else {
-      Alert.alert(
-        'Transaction Failed',
-        'Unable to validate transaction. Please try again.'
-      );
     }
+
   };
 
-  return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      <StatusBar style="light" />
-      
-      {/* Header */}
-      <LinearGradient colors={['#667eea', '#764ba2']} style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Send Money</Text>
-          <Text style={styles.headerSubtitle}>Secure Transfer with Behavioral Authentication</Text>
-        </View>
-      </LinearGradient>
+ return (
+  <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <StatusBar style="light" />
+    
+    {/* Header */}
+    <LinearGradient colors={['#667eea', '#764ba2']} style={styles.header}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <Ionicons name="arrow-back" size={24} color="#fff" />
+      </TouchableOpacity>
+      <View style={styles.headerContent}>
+        <Text style={styles.headerTitle}>Send Money</Text>
+        <Text style={styles.headerSubtitle}>Secure Transfer with Behavioral Authentication</Text>
+      </View>
+    </LinearGradient>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Behavioral Analysis Status */}
-        {isTypingActive && (
-          <View style={styles.behavioralStatusContainer}>
+    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      
+      {/* **NEW: Security Status Display** */}
+      {fraudAnalysis && (
+        <View style={[
+          styles.securityStatusContainer,
+          fraudAnalysis.riskLevel === 'HIGH' ? styles.highRisk :
+          fraudAnalysis.riskLevel === 'MEDIUM' ? styles.mediumRisk : styles.lowRisk
+        ]}>
+          <View style={styles.securityHeader}>
+            <Ionicons 
+              name={
+                fraudAnalysis.riskLevel === 'HIGH' ? 'shield-checkmark' :
+                fraudAnalysis.riskLevel === 'MEDIUM' ? 'warning' : 'checkmark-circle'
+              } 
+              size={20} 
+              color={
+                fraudAnalysis.riskLevel === 'HIGH' ? '#EF4444' :
+                fraudAnalysis.riskLevel === 'MEDIUM' ? '#F59E0B' : '#22C55E'
+              }
+            />
+            <Text style={styles.securityStatusTitle}>
+              Security Analysis: {fraudAnalysis.riskLevel} RISK
+            </Text>
+          </View>
+          
+          <View style={styles.securityDetails}>
+            <Text style={styles.securityStatusText}>
+              Confidence: {(fraudAnalysis.confidence * 100).toFixed(0)}% • 
+              Decision: {fraudAnalysis.decision.replace('_', ' ')}
+            </Text>
+            {fraudAnalysis.anomalyScore && (
+              <Text style={styles.securityStatusText}>
+                Anomaly Score: {fraudAnalysis.anomalyScore.toFixed(2)}
+              </Text>
+            )}
+          </View>
+          
+          {fraudAnalysis.ruleFlags.length > 0 && (
+            <View style={styles.flagsContainer}>
+              <Text style={styles.flagsTitle}>Security Alerts:</Text>
+              {fraudAnalysis.ruleFlags.map((flag, index) => (
+                <Text key={index} style={styles.flagItem}>• {flag}</Text>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* **ENHANCED: Behavioral Analysis Status with Real-time Stats** */}
+      {isTypingActive && (
+        <View style={styles.behavioralStatusContainer}>
+          <View style={styles.behavioralHeader}>
+            <Ionicons name="shield-outline" size={16} color="#667eea" />
             <Text style={styles.behavioralStatusText}>
               🔒 Analyzing typing patterns for enhanced security...
             </Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{currentTypingStats.wpm}</Text>
-                <Text style={styles.statLabel}>WPM</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{currentTypingStats.accuracy}%</Text>
-                <Text style={styles.statLabel}>Accuracy</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{currentTypingStats.averageKeyHoldTime}ms</Text>
-                <Text style={styles.statLabel}>Hold Time</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{currentTypingStats.errorRate}%</Text>
-                <Text style={styles.statLabel}>Error Rate</Text>
-              </View>
+          </View>
+          
+          <View style={styles.statsGrid}>
+            <View style={styles.statItem}>
+              <Text style={[
+                styles.statValue,
+                currentTypingStats.wpm > 100 || currentTypingStats.wpm < 20 ? styles.statWarning : styles.statNormal
+              ]}>
+                {currentTypingStats.wpm}
+              </Text>
+              <Text style={styles.statLabel}>WPM</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={[
+                styles.statValue,
+                currentTypingStats.accuracy < 70 ? styles.statWarning : styles.statNormal
+              ]}>
+                {currentTypingStats.accuracy}%
+              </Text>
+              <Text style={styles.statLabel}>Accuracy</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={[
+                styles.statValue,
+                currentTypingStats.averageKeyHoldTime > 200 ? styles.statWarning : styles.statNormal
+              ]}>
+                {currentTypingStats.averageKeyHoldTime}ms
+              </Text>
+              <Text style={styles.statLabel}>Hold Time</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={[
+                styles.statValue,
+                currentTypingStats.errorRate > 15 ? styles.statWarning : styles.statNormal
+              ]}>
+                {currentTypingStats.errorRate}%
+              </Text>
+              <Text style={styles.statLabel}>Error Rate</Text>
             </View>
           </View>
-        )}
-
-        {/* Form Fields */}
-        <View style={styles.formContainer}>
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Recipient Name *</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Enter recipient name"
-              value={recipientName}
-              onChangeText={(text) => handleInputChange(text, 'recipientName')}
-              onKeyPress={handleKeyPress}
-              autoCapitalize="words"
-            />
+          
+          {/* **NEW: Additional Real-time Metrics** */}
+          <View style={styles.additionalStats}>
+            <View style={styles.miniStatItem}>
+              <Text style={styles.miniStatValue}>{currentTypingStats.typingSpeed.toFixed(1)} keys/s</Text>
+              <Text style={styles.miniStatLabel}>Speed</Text>
+            </View>
+            <View style={styles.miniStatItem}>
+              <Text style={styles.miniStatValue}>{currentTypingStats.averageFlightTime}ms</Text>
+              <Text style={styles.miniStatLabel}>Flight Time</Text>
+            </View>
+            <View style={styles.miniStatItem}>
+              <Text style={styles.miniStatValue}>{currentTypingStats.averageKeyboardLatency}ms</Text>
+              <Text style={styles.miniStatLabel}>Latency</Text>
+            </View>
           </View>
+          
+          {/* **NEW: Consistency Indicator** */}
+          {behavioralCollector && (
+            <View style={styles.consistencyIndicator}>
+              <Text style={styles.consistencyText}>
+                Pattern Consistency: {behavioralCollector.getConsistencyScore()}%
+              </Text>
+              <View style={styles.consistencyBar}>
+                <View 
+                  style={[
+                    styles.consistencyFill, 
+                    { width: `${behavioralCollector.getConsistencyScore()}%` }
+                  ]} 
+                />
+              </View>
+            </View>
+          )}
+        </View>
+      )}
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Account Number *</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Enter account number"
-              value={recipientAccount}
-              onChangeText={(text) => handleInputChange(text, 'recipientAccount')}
-              onKeyPress={handleKeyPress}
-              keyboardType="numeric"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>IFSC Code</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Enter IFSC code"
-              value={ifscCode}
-              onChangeText={(text) => handleInputChange(text.toUpperCase(), 'ifscCode')}
-              onKeyPress={handleKeyPress}
-              autoCapitalize="characters"
-              maxLength={11}
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Amount *</Text>
-            <TextInput
-              style={[styles.textInput, styles.amountInput]}
-              placeholder="0.00"
-              value={amount}
-              onChangeText={(text) => handleInputChange(text, 'amount')}
-              onKeyPress={handleKeyPress}
-              keyboardType="decimal-pad"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Transfer Note (Optional)</Text>
-            <TextInput
-              style={[styles.textInput, styles.multilineInput]}
-              placeholder="Add a note for this transfer"
-              value={transferNote}
-              onChangeText={(text) => handleInputChange(text, 'transferNote')}
-              onKeyPress={handleKeyPress}
-              multiline={true}
-              numberOfLines={3}
-            />
+      {/* **NEW: Transaction Risk Assessment** */}
+      {!isTypingActive && fraudAnalysis && (
+        <View style={styles.riskAssessmentContainer}>
+          <Text style={styles.riskAssessmentTitle}>🔍 Transaction Risk Assessment</Text>
+          <View style={styles.riskMetrics}>
+            <View style={styles.riskMetricItem}>
+              <Text style={styles.riskMetricLabel}>Security Level</Text>
+              <Text style={[
+                styles.riskMetricValue,
+                fraudAnalysis.riskLevel === 'LOW' ? styles.lowRiskText :
+                fraudAnalysis.riskLevel === 'MEDIUM' ? styles.mediumRiskText : styles.highRiskText
+              ]}>
+                {fraudAnalysis.riskLevel}
+              </Text>
+            </View>
+            <View style={styles.riskMetricItem}>
+              <Text style={styles.riskMetricLabel}>AI Confidence</Text>
+              <Text style={styles.riskMetricValue}>
+                {(fraudAnalysis.confidence * 100).toFixed(0)}%
+              </Text>
+            </View>
           </View>
         </View>
+      )}
 
-        {/* Transaction Summary */}
-        {recipientName && amount && (
-          <View style={styles.summaryContainer}>
-            <Text style={styles.summaryTitle}>Transaction Summary</Text>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>To:</Text>
-              <Text style={styles.summaryValue}>{recipientName}</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Amount:</Text>
-              <Text style={styles.summaryValue}>₹{amount}</Text>
-            </View>
-            {transferNote && (
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Note:</Text>
-                <Text style={styles.summaryValue}>{transferNote}</Text>
-              </View>
-            )}
+      {/* Form Fields */}
+      <View style={styles.formContainer}>
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Recipient Name *</Text>
+          <TextInput
+            style={[
+              styles.textInput,
+              isTransactionBlocked && styles.inputDisabled
+            ]}
+            placeholder="Enter recipient name"
+            value={recipientName}
+            onChangeText={(text) => handleInputChange(text, 'recipientName')}
+            onKeyPress={handleKeyPress}
+            autoCapitalize="words"
+            editable={!isTransactionBlocked}
+          />
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Account Number *</Text>
+          <TextInput
+            style={[
+              styles.textInput,
+              isTransactionBlocked && styles.inputDisabled
+            ]}
+            placeholder="Enter account number"
+            value={recipientAccount}
+            onChangeText={(text) => handleInputChange(text, 'recipientAccount')}
+            onKeyPress={handleKeyPress}
+            keyboardType="numeric"
+            editable={!isTransactionBlocked}
+          />
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>IFSC Code</Text>
+          <TextInput
+            style={[
+              styles.textInput,
+              isTransactionBlocked && styles.inputDisabled
+            ]}
+            placeholder="Enter IFSC code"
+            value={ifscCode}
+            onChangeText={(text) => handleInputChange(text.toUpperCase(), 'ifscCode')}
+            onKeyPress={handleKeyPress}
+            autoCapitalize="characters"
+            maxLength={11}
+            editable={!isTransactionBlocked}
+          />
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Amount *</Text>
+          <TextInput
+            style={[
+              styles.textInput, 
+              styles.amountInput,
+              isTransactionBlocked && styles.inputDisabled
+            ]}
+            placeholder="0.00"
+            value={amount}
+            onChangeText={(text) => handleInputChange(text, 'amount')}
+            onKeyPress={handleKeyPress}
+            keyboardType="decimal-pad"
+            editable={!isTransactionBlocked}
+          />
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Transfer Note (Optional)</Text>
+          <TextInput
+            style={[
+              styles.textInput, 
+              styles.multilineInput,
+              isTransactionBlocked && styles.inputDisabled
+            ]}
+            placeholder="Add a note for this transfer"
+            value={transferNote}
+            onChangeText={(text) => handleInputChange(text, 'transferNote')}
+            onKeyPress={handleKeyPress}
+            multiline={true}
+            numberOfLines={3}
+            editable={!isTransactionBlocked}
+          />
+        </View>
+      </View>
+
+      {/* Transaction Summary */}
+      {recipientName && amount && (
+        <View style={styles.summaryContainer}>
+          <Text style={styles.summaryTitle}>Transaction Summary</Text>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>To:</Text>
+            <Text style={styles.summaryValue}>{recipientName}</Text>
           </View>
-        )}
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Amount:</Text>
+            <Text style={styles.summaryValue}>₹{amount}</Text>
+          </View>
+          {transferNote && (
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Note:</Text>
+              <Text style={styles.summaryValue}>{transferNote}</Text>
+            </View>
+          )}
+          
+          {/* **NEW: Security Summary** */}
+          {fraudAnalysis && (
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Security Status:</Text>
+              <Text style={[
+                styles.summaryValue,
+                fraudAnalysis.riskLevel === 'LOW' ? styles.lowRiskText :
+                fraudAnalysis.riskLevel === 'MEDIUM' ? styles.mediumRiskText : styles.highRiskText
+              ]}>
+                {fraudAnalysis.riskLevel} RISK
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
 
-        {/* Send Money Button */}
-        <TouchableOpacity 
-          style={[styles.sendButton, (!recipientName || !recipientAccount || !amount) && styles.sendButtonDisabled]}
-          onPress={handleSendMoney}
-          disabled={!recipientName || !recipientAccount || !amount}
+      {/* **UPDATED: Enhanced Send Money Button with Security States** */}
+      <TouchableOpacity 
+        style={[
+          styles.sendButton, 
+          (isTransactionBlocked || !recipientName || !recipientAccount || !amount) && styles.sendButtonDisabled
+        ]} 
+        onPress={handleSendMoney}
+        disabled={isTransactionBlocked || !recipientName || !recipientAccount || !amount}
+      >
+        <LinearGradient
+          colors={
+            isTransactionBlocked ? ['#EF4444', '#DC2626'] :
+            (!recipientName || !recipientAccount || !amount) ? ['#ccc', '#999'] : 
+            ['#667eea', '#764ba2']
+          }
+          style={styles.sendButtonGradient}
         >
-          <LinearGradient
-            colors={(!recipientName || !recipientAccount || !amount) ? ['#ccc', '#999'] : ['#667eea', '#764ba2']}
-            style={styles.sendButtonGradient}
-          >
-            <Ionicons name="send" size={20} color="#fff" />
-            <Text style={styles.sendButtonText}>Send Money</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-
-        {/* Behavioral Info */}
-        <View style={styles.infoContainer}>
-          <Text style={styles.infoText}>
-            Your typing patterns are being analyzed in real-time to enhance transaction security. 
-            Data is collected every 6 seconds during active typing (excluding backspace).
+          <Ionicons 
+            name={
+              isTransactionBlocked ? "shield-outline" : 
+              fraudAnalysis?.riskLevel === 'MEDIUM' ? "warning-outline" : 
+              "send"
+            } 
+            size={20} 
+            color="#fff" 
+          />
+          <Text style={styles.sendButtonText}>
+            {isTransactionBlocked ? 'Transaction Blocked' : 
+             fraudAnalysis?.riskLevel === 'MEDIUM' ? 'Verify & Send' : 
+             'Send Money'}
           </Text>
+        </LinearGradient>
+      </TouchableOpacity>
+
+      {/* **NEW: Security Actions** */}
+      {isTransactionBlocked && (
+        <View style={styles.securityActionsContainer}>
+          <TouchableOpacity 
+            style={styles.verificationButton}
+            onPress={handleAdditionalVerification}
+          >
+            <Ionicons name="finger-print" size={18} color="#667eea" />
+            <Text style={styles.verificationButtonText}>Complete Additional Verification</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.supportButton}
+            onPress={() => Alert.alert('Support', 'Contact customer support at support@yourbank.com')}
+          >
+            <Ionicons name="help-circle-outline" size={18} color="#666" />
+            <Text style={styles.supportButtonText}>Contact Support</Text>
+          </TouchableOpacity>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
-  );
+      )}
+
+      {/* **ENHANCED: Behavioral Info with Security Details** */}
+      <View style={styles.infoContainer}>
+        <Text style={styles.infoTitle}>🛡️ Enhanced Security Information</Text>
+        <Text style={styles.infoText}>
+          Your typing patterns are analyzed in real-time using advanced AI to detect fraudulent activity:
+          {'\n\n'}• Behavioral biometrics collected every 6 seconds
+          {'\n'}• Location and device fingerprinting
+          {'\n'}• Multi-factor risk assessment
+          {'\n'}• Real-time anomaly detection
+          {'\n\n'}Suspicious patterns trigger additional verification steps to protect your account.
+        </Text>
+        
+        {behavioralCollector && (
+          <View style={styles.sessionInfo}>
+            <Text style={styles.sessionInfoTitle}>Current Session:</Text>
+            <Text style={styles.sessionInfoText}>
+              • Vectors captured: {behavioralCollector.getFinalMetrics().vectorCount}
+              {'\n'}• Consistency score: {behavioralCollector.getConsistencyScore()}%
+              {'\n'}• Session duration: {Math.round((Date.now() - (behavioralCollector.getFinalMetrics().sessionMetrics?.sessionDuration || 0)) / 1000)}s
+            </Text>
+          </View>
+        )}
+      </View>
+    </ScrollView>
+  </KeyboardAvoidingView>
+);
+
 }
 
 const styles = StyleSheet.create({
@@ -875,5 +1624,42 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
     letterSpacing: 0.3,
+  },
+  securityStatusContainer: {
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 2,
+  },
+  lowRisk: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#22C55E',
+  },
+  mediumRisk: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#F59E0B',
+  },
+  highRisk: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#EF4444',
+  },
+  securityStatusTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  securityStatusText: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  flagsText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 8,
+    color: '#666',
   },
 });
