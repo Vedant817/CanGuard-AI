@@ -538,6 +538,7 @@ class FraudDetectionEngine {
 
     const ageBoost = age >= 60 ? 1.15 : 1.0;
     const anomalyScore = (zScores.reduce((sum, z) => sum + z, 0) / zScores.length) * ageBoost;
+    console.log(`🔍 Anomaly score computed: ${anomalyScore.toFixed(2)} (Age factor: ${ageBoost})`);
 
     return { score: anomalyScore, zScores };
   }
@@ -623,7 +624,7 @@ class FraudDetectionEngine {
     let decision: FraudDetectionResult['decision'];
     let riskLevel: FraudDetectionResult['riskLevel'];
     let confidence: number;
-
+    console.log(`🔍 Analyzing transaction: Anomaly Score = ${anomalyScore}, Rule Flags = ${ruleFlags.join(', ')}`);
     if (anomalyScore === null) {
       this.idleCount++;
       if (this.idleCount >= this.IDLE_THRESHOLD && travelSpeed > 80) {
@@ -714,12 +715,13 @@ export default function SendMoneyScreen() {
 
   const [fraudDetectionEngine] = useState(() => new FraudDetectionEngine());
   const [fraudAnalysis, setFraudAnalysis] = useState<FraudDetectionResult | null>(null);
-  const [userAge] = useState(65); // You can get this from user profile
+  const [userAge] = useState(21); // You can get this from user profile
   const [isTransactionBlocked, setIsTransactionBlocked] = useState(false);
-
+  
   const fetchBehavioralData = async () => {
   try {
     const data = await getBehavioralData();
+    console.log('Behavioral data fetched:', data);
     if (data) {
       setBehavioralData(data);
     }
@@ -737,6 +739,8 @@ export default function SendMoneyScreen() {
       }
     };
   }, []);
+
+  
 
   const getOrCreateDeviceUUID = async (): Promise<string> => {
     try {
@@ -929,7 +933,7 @@ export default function SendMoneyScreen() {
     if (!behavioralData || !deviceMetrics.gpsLocation) return;
 
     const locationData = {
-      lastLogin: { latitude: 28.7041, longitude: 77.1025 }, // Delhi - get from user session
+      lastLogin: { latitude: behavioralData.data[0].last_locations[0].latitude, longitude: behavioralData.data[0].last_locations[0].longitude }, 
       current: { 
         latitude: deviceMetrics.gpsLocation.latitude, 
         longitude: deviceMetrics.gpsLocation.longitude 
@@ -945,20 +949,22 @@ export default function SendMoneyScreen() {
     };
 
     // Use stored behavioral data as reference
-    const referenceVector: BehavioralVector = {
-      wpm: behavioralData.averageWpm || 79,
-      accuracy: behavioralData.averageAccuracy || 330,
-      typingSpeed: behavioralData.averageTypingSpeed || 9,
-      errorRate: behavioralData.averageErrorRate || 278,
-      averageKeyHoldTime: behavioralData.averageKeyHoldTime || 74,
-      averageFlightTime: behavioralData.averageFlightTime || 5,
-      averageKeyboardLatency: behavioralData.averageKeyboardLatency || 34.32,
-      averageTapRhythm: behavioralData.averageTapRhythm || 13,
-      keysPressed: behavioralData.averageKeysPressed || 154,
-      correctKeys: behavioralData.averageCorrectKeys || 23,
-      timestamp: Date.now(),
-      startTime: Date.now()
-    };
+const stats = behavioralData?.data?.[0]?.fingerprint?.D?.sessionData?.typingStats;
+
+const referenceVector: BehavioralVector = {
+  wpm: stats?.wpm || 79,
+  accuracy: stats?.accuracy || 90,
+  typingSpeed: stats?.typingSpeed || 9,
+  errorRate: stats?.errorRate || 10,
+  averageKeyHoldTime: stats?.averageKeyHoldTime || 74,
+  averageFlightTime: stats?.averageFlightTime || 5,
+  averageKeyboardLatency: stats?.averageKeyboardLatency || 34.32,
+  averageTapRhythm: stats?.averageTapRhythm || 13,
+  keysPressed: stats?.correctChars || 154, // fallback assumption
+  correctKeys: stats?.correctChars || 23,  // fallback assumption
+  timestamp: Date.now(),
+  startTime: Date.now()
+};
 
     const analysis = fraudDetectionEngine.analyzeTransaction(
       currentVector,
@@ -1012,32 +1018,33 @@ export default function SendMoneyScreen() {
     setIsTransactionBlocked(false);
   };
 
- const handleSendMoney = async () => {
-    if (isTransactionBlocked) {
-      Alert.alert(
-        'Transaction Blocked',
-        'This transaction has been blocked due to security concerns. Please complete additional verification first.'
-      );
-      return;
-    }
+const handleSendMoney = async () => {
+  // Run fraud analysis first if it's not yet done
 
-    if (fraudAnalysis && fraudAnalysis.riskLevel === 'HIGH') {
-      Alert.alert(
-        'High Risk Transaction',
-        'This transaction has been flagged as high risk. Please contact customer support.'
-      );
-      return;
-    }
 
-    else{
-      Alert.alert(
-        'Success',
-        'Transaction processed successfully!',
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
-    }
+  if (isTransactionBlocked) {
+    Alert.alert(
+      'Transaction Blocked',
+      'This transaction has been blocked due to security concerns. Please complete additional verification first.'
+    );
+    return;
+  }
 
-  };
+  if (fraudAnalysis && fraudAnalysis.riskLevel === 'HIGH') {
+    Alert.alert(
+      'High Risk Transaction',
+      'This transaction has been flagged as high risk. Please contact customer support.'
+    );
+    return;
+  }
+
+  // Success case
+  Alert.alert(
+    'Success',
+    'Transaction processed successfully!',
+    [{ text: 'OK', onPress: () => router.back() }]
+  );
+};
 
  return (
   <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
