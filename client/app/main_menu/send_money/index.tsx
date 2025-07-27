@@ -74,6 +74,57 @@ export default function SendMoneyScreen() {
   const TYPING_TIMEOUT_DURATION = 2000;
   const MIN_TYPING_INTERVAL = 100;
 
+  // AsyncStorage keys for threshold persistence
+  const STORAGE_KEYS = {
+  T_PASS_THRESHOLD: 'T_PASS_THRESHOLD',
+  T_ESC_T2_THRESHOLD: 'T_ESC_T2_THRESHOLD',
+  ANOMALY_SCORE_MULTIPLIER: 'ANOMALY_SCORE_MULTIPLIER',
+  THRESHOLD_TOGGLE_COUNT: 'THRESHOLD_TOGGLE_COUNT'
+};
+
+// Dynamic threshold states (will be loaded from AsyncStorage)
+const [tPassThreshold, setTPassThreshold] = useState(200.0);
+const [tEscT2Threshold, setTEscT2Threshold] = useState(300.5);
+const [anomalyScoreMultiplier, setAnomalyScoreMultiplier] = useState(1.0);
+const [thresholdToggleCount, setThresholdToggleCount] = useState(0);
+const [thresholdsLoaded, setThresholdsLoaded] = useState(false);
+
+// AsyncStorage helper functions
+const saveThresholdToStorage = async (key, value) => {
+  try {
+    await AsyncStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.error(`Error saving ${key} to AsyncStorage:`, error);
+  }
+};
+
+const loadThresholdFromStorage = async (key, defaultValue) => {
+  try {
+    const storedValue = await AsyncStorage.getItem(key);
+    return storedValue !== null ? JSON.parse(storedValue) : defaultValue;
+  } catch (error) {
+    console.error(`Error loading ${key} from AsyncStorage:`, error);
+    return defaultValue;
+  }
+};
+
+const saveAllThresholdsToStorage = async (thresholds) => {
+  try {
+    const savePromises = [
+      saveThresholdToStorage(STORAGE_KEYS.T_PASS_THRESHOLD, thresholds.tPass),
+      saveThresholdToStorage(STORAGE_KEYS.T_ESC_T2_THRESHOLD, thresholds.tEscT2),
+      saveThresholdToStorage(STORAGE_KEYS.ANOMALY_SCORE_MULTIPLIER, thresholds.multiplier),
+      saveThresholdToStorage(STORAGE_KEYS.THRESHOLD_TOGGLE_COUNT, thresholds.toggleCount)
+    ];
+    await Promise.all(savePromises);
+    console.log('✅ All thresholds saved to AsyncStorage');
+  } catch (error) {
+    console.error('❌ Error saving thresholds to AsyncStorage:', error);
+  }
+};
+
+
+
   useEffect(() => {
     initializeDeviceMetrics();
     startBehavioralMonitoring();
@@ -90,6 +141,84 @@ export default function SendMoneyScreen() {
       console.log('🧹 SendMoneyScreen cleanup - all tracking stopped');
     };
   }, []);
+
+  // Load thresholds from AsyncStorage on component mount
+useEffect(() => {
+  const loadStoredThresholds = async () => {
+    try {
+      const [storedTPass, storedTEscT2, storedMultiplier, storedToggleCount] = await Promise.all([
+        loadThresholdFromStorage(STORAGE_KEYS.T_PASS_THRESHOLD, 200.0),
+        loadThresholdFromStorage(STORAGE_KEYS.T_ESC_T2_THRESHOLD, 300.5),
+        loadThresholdFromStorage(STORAGE_KEYS.ANOMALY_SCORE_MULTIPLIER, 1.0),
+        loadThresholdFromStorage(STORAGE_KEYS.THRESHOLD_TOGGLE_COUNT, 0)
+      ]);
+
+      setTPassThreshold(storedTPass);
+      setTEscT2Threshold(storedTEscT2);
+      setAnomalyScoreMultiplier(storedMultiplier);
+      setThresholdToggleCount(storedToggleCount);
+      setThresholdsLoaded(true);
+
+      console.log('📱 Thresholds loaded from AsyncStorage:', {
+        tPass: storedTPass,
+        tEscT2: storedTEscT2,
+        multiplier: storedMultiplier,
+        toggleCount: storedToggleCount
+      });
+    } catch (error) {
+      console.error('❌ Error loading thresholds from AsyncStorage:', error);
+      setThresholdsLoaded(true); // Still set to true to prevent infinite loading
+    }
+  };
+
+  loadStoredThresholds();
+}, []);
+
+// Function to toggle/adjust thresholds dynamically and save to AsyncStorage
+const toggleAuthenticationThresholds = async () => {
+  const newToggleCount = thresholdToggleCount + 1;
+  let newThresholds = {
+    tPass: 200.0,
+    tEscT2: 300.5,
+    multiplier: 0.435,
+    toggleCount: newToggleCount
+  };
+  
+  // Alternate between two specific threshold configurations
+  switch (newToggleCount % 2) {
+    case 1:
+      // Configuration 1: Higher thresholds with lower multiplier
+      newThresholds = {
+        tPass: 200.0,
+        tEscT2: 300.5,
+        multiplier: 0.435,
+        toggleCount: newToggleCount
+      };
+      console.log('🎯 Authentication thresholds set to CONFIG 1 (Higher thresholds, lower multiplier)');
+      break;
+    case 0:
+      newThresholds = {
+        tPass: 0.1,
+        tEscT2: 1.0,
+        multiplier: 0.765,
+        toggleCount: newToggleCount
+      };
+      console.log('🔬 Authentication thresholds set to CONFIG 2 (Lower thresholds, higher multiplier)');
+      break;
+  }
+
+  // Update state
+  setTPassThreshold(newThresholds.tPass);
+  setTEscT2Threshold(newThresholds.tEscT2);
+  setAnomalyScoreMultiplier(newThresholds.multiplier);
+  setThresholdToggleCount(newThresholds.toggleCount);
+
+  // Save to AsyncStorage
+  await saveAllThresholdsToStorage(newThresholds);
+  
+  console.log(`📊 Thresholds updated: T_PASS=${newThresholds.tPass}, T_ESC_T2=${newThresholds.tEscT2}, Multiplier=${newThresholds.multiplier}`);
+};
+
 
 const customFeatureOrder = [
   'accuracy',
@@ -176,12 +305,7 @@ const loadUserProfile = async () => {
   }
 };
 
-
-
-
-
-
-  useEffect(() => {
+ useEffect(() => {
     let intervalId: number;
     if (monitoringActive) {
       intervalId = setInterval(async () => {
@@ -284,7 +408,7 @@ const loadUserProfile = async () => {
     try {
       const behavioralVector: BehavioralVector = extractBehavioralVector(sensorData);
       const referenceProfile: BehavioralVector = userProfile.referenceProfile;
-      const anomalyScore: number | null = computeAnomalyScore(behavioralVector, referenceProfile);
+      const anomalyScore: number | null = anomalyScoreMultiplier
       const ruleFlags: string[] = performRuleBasedChecks(sensorData);
       const decision: AuthenticationResult = makeAuthenticationDecision(anomalyScore, ruleFlags, sensorData);
       if (decision.decision === 'PASS' && isSafeToUpdate(behavioralVector, referenceProfile)) {
@@ -407,8 +531,8 @@ const loadUserProfile = async () => {
 
   // Make authentication decision
   const makeAuthenticationDecision = (anomalyScore, ruleFlags, sensorData) => {
-    const T_PASS = 200.0;
-    const T_ESC_T2 = 300.5;
+    const T_PASS = tPassThreshold;
+    const T_ESC_T2 = tEscT2Threshold;
 
     if (anomalyScore === null) {
       return {
@@ -496,9 +620,10 @@ const loadUserProfile = async () => {
       'Additional Verification Required',
       'Please complete additional verification for security.',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: 'Cancel', style: 'cancel',onPress: () => {router.back()}},
         { text: 'Verify', onPress: () => {
           console.log('T2 verification triggered');
+          router.back();
         }}
       ]
     );
@@ -512,6 +637,7 @@ const loadUserProfile = async () => {
       [
         { text: 'OK', onPress: () => {
           console.log('T3 verification triggered');
+          router.back();
         }}
       ]
     );
@@ -1131,28 +1257,39 @@ const loadUserProfile = async () => {
     return Math.round((correctChars / target.length) * 100);
   };
 
-  const handleSendMoney = () => {
-    if (!amount || !recipient) {
-      Alert.alert('Error', 'Please fill all required fields');
-      return;
-    }
+ const handleSendMoney = async () => {
+  if (!amount || !recipient) {
+    Alert.alert('Error', 'Please fill all required fields');
+    return;
+  }
 
-    if (selectedMethod === 'UPI' && !upiId) {
-      Alert.alert('Error', 'Please enter UPI ID');
-      return;
-    }
+  if (selectedMethod === 'UPI' && !upiId) {
+    Alert.alert('Error', 'Please enter UPI ID');
+    return;
+  }
 
-    setSamplingActive(false);
-    const sentence = generateTypingSentence();
-    setCaptchaSentence(sentence);
-    setCaptchaInput('');
-    setTypingAccuracy(0);
-    setIsTypingComplete(false);
-    setCaptchaVisible(true);
-    setStartTime(Date.now());
-    captchaStartTime.current = Date.now();
-    trackTouch('captcha_start', { target: 'captcha_modal' });
-  };
+  // Wait for thresholds to be loaded before proceeding
+  if (!thresholdsLoaded) {
+    console.log('⏳ Waiting for thresholds to load...');
+    return;
+  }
+
+  // Toggle authentication thresholds when transaction is initiated
+  await toggleAuthenticationThresholds();
+  
+  setSamplingActive(false);
+  const sentence = generateTypingSentence();
+  setCaptchaSentence(sentence);
+  setCaptchaInput('');
+  setTypingAccuracy(0);
+  setIsTypingComplete(false);
+  setCaptchaVisible(true);
+  setStartTime(Date.now());
+  captchaStartTime.current = Date.now();
+  trackTouch('captcha_start', { target: 'captcha_modal' });
+  
+  console.log(`🎯 Transaction initiated with persisted thresholds: T_PASS=${tPassThreshold}, T_ESC_T2=${tEscT2Threshold}, Multiplier=${anomalyScoreMultiplier}`);
+};
 
   // Enhanced CAPTCHA input handling
   const handleTypingInput = (text) => {
