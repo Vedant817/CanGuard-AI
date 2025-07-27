@@ -17,14 +17,21 @@ exports.saveTypingDataWithVectors = async (req, res) => {
 
     const { typingStats, deviceMetrics, vectorStandardDeviations, vectorMetadata } = sessionData;
 
-    console.log('📊 Vector Standard Deviations received:', vectorStandardDeviations);
-    const standardDeviations = vectorStandardDeviations || {
+    const defaultStd = {
       wpm: 0, accuracy: 0, typingSpeed: 0, errorRate: 0,
       averageKeyHoldTime: 0, averageFlightTime: 0,
-      averageKeyboardLatency: 0, averageTapRhythm: 0
+      averageKeyboardLatency: 0, averageTapRhythm: 0,
+      correctKeystrokes: 0, totalTime: 0, totalWords: 0, cpm: 0
     };
 
-    console.log('📊 Final standard deviations to be saved:', standardDeviations);
+    const stdWithFallback = {};
+    for (const key in defaultStd) {
+      const rawStd = vectorStandardDeviations?.[key] ?? 0;
+      const originalVal = typingStats?.[key] ?? 0;
+      stdWithFallback[key] = rawStd === 0 ? (originalVal * 0.1) : rawStd;
+    }
+
+    console.log('📊 Final standard deviations with fallback:', stdWithFallback);
 
     const newBehavior = new Behavioral({
       userId,
@@ -36,21 +43,8 @@ exports.saveTypingDataWithVectors = async (req, res) => {
             timestamp: new Date(sessionData.timestamp)
           }
         },
-        D_std: {
-          wpm: standardDeviations.wpm || 0,
-          accuracy: standardDeviations.accuracy || 0,
-          typingSpeed: standardDeviations.typingSpeed || 0,
-          errorRate: standardDeviations.errorRate || 0,
-          averageKeyHoldTime: standardDeviations.averageKeyHoldTime || 0,
-          averageFlightTime: standardDeviations.averageFlightTime || 0,
-          averageKeyboardLatency: standardDeviations.averageKeyboardLatency || 0,
-          averageTapRhythm: standardDeviations.averageTapRhythm || 0
-        },
-        features_used: [
-          'wpm', 'accuracy', 'typingSpeed', 'errorRate',
-          'averageKeyHoldTime', 'averageFlightTime', 
-          'averageKeyboardLatency', 'averageTapRhythm'
-        ],
+        D_std: stdWithFallback,
+        features_used: Object.keys(stdWithFallback),
         vectorMetadata: vectorMetadata || {
           vectorCount: 0,
           calculationInterval: 6000,
@@ -66,11 +60,9 @@ exports.saveTypingDataWithVectors = async (req, res) => {
         timestamp: new Date(deviceMetrics.gpsLocation.timestamp)
       }] : []
     });
-    console.log('📊 About to save behavioral data with D_std:', newBehavior.fingerprint.D_std);
 
     await newBehavior.save();
     const savedBehavior = await Behavioral.findById(newBehavior._id);
-    console.log('📊 Verified saved D_std values:', savedBehavior.fingerprint.D_std);
 
     await User.findByIdAndUpdate(userId, {
       lastBehavioralVerification: new Date()
@@ -85,7 +77,7 @@ exports.saveTypingDataWithVectors = async (req, res) => {
         fingerprintId: newBehavior._id,
         vectorStats: {
           averageMetrics: typingStats,
-          standardDeviationMetrics: standardDeviations,
+          standardDeviationMetrics: stdWithFallback,
           vectorCount: vectorMetadata?.vectorCount || 0
         },
         savedDStd: savedBehavior.fingerprint.D_std
@@ -101,6 +93,7 @@ exports.saveTypingDataWithVectors = async (req, res) => {
     });
   }
 };
+
 exports.saveTypingData = async (req, res) => {
   try {
     const userId = req.userId;
@@ -128,7 +121,7 @@ exports.saveTypingData = async (req, res) => {
         D_std: {
           wpm: 0, accuracy: 0, typingSpeed: 0, errorRate: 0,
           averageKeyHoldTime: 0, averageFlightTime: 0,
-          averageKeyboardLatency: 0, averageTapRhythm: 0
+          averageKeyboardLatency: 0, averageTapRhythm: 0,correctKeystrokes: 0,totalTime: 0,totalWords: 0,cpm: 0
         },
         features_used: Object.keys(typingStats),
         vectorMetadata: {
