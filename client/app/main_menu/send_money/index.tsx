@@ -120,15 +120,17 @@ interface TypingStats {
 }
 
 const mapTypingStatsToReferenceOrder = (typingStats: TypingStats): number[] => {
-  const derived: { chars_per_min: number; words_per_min: number } = {
-    chars_per_min: typingStats.wpm ? typingStats.wpm * 5 : 0,
-    words_per_min: typingStats.wpm ?? 0
+  const derived: { [key: string]: number } = {
+    chars_per_min: typingStats.cpm ?? (typingStats.wpm ?? 0) * 5,
+    words_per_min: typingStats.wpm ?? 0,
+    correctChars: typingStats.correctKeystrokes ?? 0
   };
 
   return customFeatureOrder.map((feature: string) =>
-    Number(typingStats[feature] ?? derived[feature as keyof typeof derived] ?? 0)
+    Number(typingStats[feature] ?? derived[feature] ?? 0)
   );
 };
+
 
 const loadUserProfile = async () => {
   try {
