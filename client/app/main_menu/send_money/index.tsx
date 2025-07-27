@@ -33,25 +33,29 @@ export default function SendMoneyScreen() {
   const [captchaVisible, setCaptchaVisible] = useState(false);
   const [typingAccuracy, setTypingAccuracy] = useState(0);
   const [isTypingComplete, setIsTypingComplete] = useState(false);
-  
-  // Enhanced behavioral monitoring state
   const [startTime, setStartTime] = useState(Date.now());
-  const [keystrokeData, setKeystrokeData] = useState([]);
+  type Keystroke = {
+    key: string;
+    timestamp: number;
+    isBackspace?: boolean;
+    dwellTime?: number;
+    flightTime?: number;
+    correct?: boolean;
+    position?: number;
+    isActiveTyping?: boolean;
+  };
+  const [keystrokeData, setKeystrokeData] = useState<Keystroke[]>([]);
   const [touchData, setTouchData] = useState([]);
   const [deviceMetrics, setDeviceMetrics] = useState({});
   const [samplingActive, setSamplingActive] = useState(true);
   const [jsonSnapshot, setJsonSnapshot] = useState(null);
   const [monitoringActive, setMonitoringActive] = useState(false);
   const [interactionData, setInteractionData] = useState([]);
-  
-  // Typing state management
   const [isActivelyTyping, setIsActivelyTyping] = useState(false);
   const [lastTypingTime, setLastTypingTime] = useState(0);
   const [typingTimeout, setTypingTimeout] = useState(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [focusedInput, setFocusedInput] = useState(null);
-  
-  // NEW: T1 Model Integration State
   const [authenticationStatus, setAuthenticationStatus] = useState('UNKNOWN');
   const [t1ModelData, setT1ModelData] = useState(null);
   const [lastAuthResult, setLastAuthResult] = useState(null);
@@ -60,24 +64,22 @@ export default function SendMoneyScreen() {
     age: 25,
     lastLoginLocation: null
   });
-  
+
   const router = useRouter();
   const monitoringInterval = useRef(null);
   const sessionStartTime = useRef(Date.now());
   const lastInteractionTime = useRef(Date.now());
   const captchaStartTime = useRef(null);
-  
-  // Constants for typing detection
+
   const TYPING_TIMEOUT_DURATION = 2000;
   const MIN_TYPING_INTERVAL = 100;
 
-  // Initialize monitoring on component mount
   useEffect(() => {
     initializeDeviceMetrics();
     startBehavioralMonitoring();
     setMonitoringActive(true);
     loadUserProfile();
-    
+
     return () => {
       if (monitoringInterval.current) {
         clearInterval(monitoringInterval.current);
@@ -89,74 +91,137 @@ export default function SendMoneyScreen() {
     };
   }, []);
 
-  // Load user profile for T1 model
-  const loadUserProfile = async () => {
-    try {
-      const storedProfile = await AsyncStorage.getItem('userBehavioralProfile');
-      if (storedProfile) {
-        setUserProfile(JSON.parse(storedProfile));
-      }
-    } catch (error) {
-      console.error('Error loading user profile:', error);
-    }
+const customFeatureOrder = [
+  'accuracy',
+  'averageFlightTime',
+  'averageKeyHoldTime',
+  'averageTapRhythm',
+  'correctChars',
+  'errorRate',
+  'totalTime',
+  'totalWords',
+  'chars_per_min',     // derived from wpm × 5
+  'words_per_min'      // same as wpm
+];
+
+interface TypingStats {
+  accuracy?: number;
+  averageFlightTime?: number;
+  averageKeyHoldTime?: number;
+  averageTapRhythm?: number;
+  correctChars?: number;
+  errorRate?: number;
+  totalTime?: number;
+  totalWords?: number;
+  chars_per_min?: number;
+  words_per_min?: number;
+  wpm?: number;
+  [key: string]: number | undefined;
+}
+
+const mapTypingStatsToReferenceOrder = (typingStats: TypingStats): number[] => {
+  const derived: { chars_per_min: number; words_per_min: number } = {
+    chars_per_min: typingStats.wpm ? typingStats.wpm * 5 : 0,
+    words_per_min: typingStats.wpm ?? 0
   };
 
-  // Enhanced 10-second monitoring timer with T1 model integration
+  return customFeatureOrder.map((feature: string) =>
+    Number(typingStats[feature] ?? derived[feature as keyof typeof derived] ?? 0)
+  );
+};
+
+const loadUserProfile = async () => {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const response = await fetch(`${API_BASE_URL}/api/behavior/data`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const json = await response.json();
+
+    if (
+      json.success &&
+      Array.isArray(json.data) &&
+      json.data.length > 0 &&
+      json.data[0].fingerprint?.D?.sessionData?.typingStats
+    ) {
+      const typingStats = json.data[0].fingerprint.D.sessionData.typingStats;
+      const lastLoginLocation = json.data[0].last_locations?.[0] ?? null;
+
+      const orderedTypingStats = mapTypingStatsToReferenceOrder(typingStats);
+
+      console.log('✅ Ordered Typing Stats:', orderedTypingStats);
+      console.log('📍 Last Login Location:', lastLoginLocation);
+
+      setUserProfile(prev => ({
+        ...prev,
+        referenceProfile: orderedTypingStats,
+        lastLoginLocation
+      }));
+    } else {
+      console.warn('⚠️ Typing stats not found in response');
+    }
+  } catch (error) {
+    console.error('❌ Error loading typing stats:', error);
+  }
+};
+
+
+
+
+
+
   useEffect(() => {
-    let intervalId;
-    
+    let intervalId: number;
     if (monitoringActive) {
       intervalId = setInterval(async () => {
         try {
-          // Collect data for T1 model
           const t1Data = await collectDataForT1Model();
           setT1ModelData(t1Data);
-          
-          // Only run T1 authentication if actively typing or in CAPTCHA mode
+
           if (isActivelyTyping || captchaVisible) {
             const authResult = await performBehavioralAuthentication(t1Data);
             setLastAuthResult(authResult);
-            
-            // Store authentication result
+
             await AsyncStorage.setItem('lastAuthResult', JSON.stringify(authResult));
-            
-            // Update UI with authentication status
+
             setAuthenticationStatus(authResult.authentication_result?.decision || 'UNKNOWN');
-            
             console.log('🔐 T1 Authentication Result:', authResult);
           }
-          
+
           // Continue with regular snapshot collection
-          const snapshot = await collectDataSnapshot();
-          setJsonSnapshot(snapshot);
-          
-          // Only log detailed typing info when actively typing
-          if (isActivelyTyping) {
-            console.log('📊 Send Money Screen 10-Second Snapshot (ACTIVE TYPING):', JSON.stringify(snapshot, null, 2));
-          } else {
-            console.log('📊 Send Money Screen 10-Second Snapshot (NO TYPING):', {
-              timestamp: snapshot.timestamp,
-              screenInfo: snapshot.screenInfo,
-              transactionData: snapshot.transactionData,
-              authStatus: authenticationStatus,
-              message: "Typing tracking paused - no active typing detected"
-            });
-          }
-          
-          // Store snapshot locally
-          await AsyncStorage.setItem('sendMoneySnapshot', JSON.stringify(snapshot));
-          
-          // Send to backend only if actively typing or in CAPTCHA mode
-          if ((isActivelyTyping || captchaVisible) && samplingActive) {
-            await saveBehavioralData(snapshot.typingStats, snapshot.deviceMetrics);
-          }
-          
+          // const snapshot = await collectDataSnapshot();
+          // setJsonSnapshot(snapshot);
+
+          // // Only log detailed typing info when actively typing
+          // if (isActivelyTyping) {
+          //   console.log('📊 Send Money Screen 10-Second Snapshot (ACTIVE TYPING):', JSON.stringify(snapshot, null, 2));
+          // } else {
+          //   console.log('📊 Send Money Screen 10-Second Snapshot (NO TYPING):', {
+          //     timestamp: snapshot.timestamp,
+          //     screenInfo: snapshot.screenInfo,
+          //     transactionData: snapshot.transactionData,
+          //     authStatus: authenticationStatus,
+          //     message: "Typing tracking paused - no active typing detected"
+          //   });
+          // }
+
+          // // Store snapshot locally
+          // await AsyncStorage.setItem('sendMoneySnapshot', JSON.stringify(snapshot));
         } catch (error) {
           console.error('Error in enhanced monitoring:', error);
         }
       }, 10000); // 10 seconds
     }
-    
+
     return () => {
       if (intervalId) {
         clearInterval(intervalId);
@@ -164,11 +229,8 @@ export default function SendMoneyScreen() {
     };
   }, [monitoringActive, samplingActive, captchaVisible, isActivelyTyping, keystrokeData, touchData, interactionData]);
 
-  // Collect data specifically formatted for T1 model
   const collectDataForT1Model = async () => {
     const snapshot = await collectDataSnapshot();
-    
-    // Format data specifically for T1 model consumption
     const t1ModelData = {
       timestamp: snapshot.timestamp,
       sessionId: snapshot.sessionId,
@@ -190,38 +252,48 @@ export default function SendMoneyScreen() {
       behavioralMetrics: snapshot.behavioralMetrics,
       userProfile: userProfile
     };
-    
+
     return t1ModelData;
   };
 
-  // Client-side T1 Model Implementation
-  const performBehavioralAuthentication = async (sensorData) => {
+  interface BehavioralVector extends Array<number> {}
+
+  interface AuthenticationResult {
+    decision: string;
+    reason?: string;
+    confidence: number;
+    risk_level: string;
+  }
+
+  interface BehavioralAuthenticationResult {
+    authentication_result: AuthenticationResult;
+    behavioral_vector: BehavioralVector;
+    anomaly_score: number | null;
+    rule_flags: string[];
+    reference_profile: BehavioralVector;
+    timestamp: string;
+    session_info: any;
+    error?: string;
+  }
+
+  const performBehavioralAuthentication = async (
+    sensorData: any
+  ): Promise<BehavioralAuthenticationResult> => {
     try {
-      // Extract behavioral vector from sensor data
-      const behavioralVector = extractBehavioralVector(sensorData);
-      
-      // Get reference profile
-      const referenceProfile = userProfile.referenceProfile;
-      
-      // Compute anomaly score
-      const anomalyScore = computeAnomalyScore(behavioralVector, referenceProfile);
-      
-      // Perform rule-based checks
-      const ruleFlags = performRuleBasedChecks(sensorData);
-      
-      // Make authentication decision
-      const decision = makeAuthenticationDecision(anomalyScore, ruleFlags, sensorData);
-      
-      // Update reference profile if appropriate
+      const behavioralVector: BehavioralVector = extractBehavioralVector(sensorData);
+      const referenceProfile: BehavioralVector = userProfile.referenceProfile;
+      const anomalyScore: number | null = computeAnomalyScore(behavioralVector, referenceProfile);
+      const ruleFlags: string[] = performRuleBasedChecks(sensorData);
+      const decision: AuthenticationResult = makeAuthenticationDecision(anomalyScore, ruleFlags, sensorData);
       if (decision.decision === 'PASS' && isSafeToUpdate(behavioralVector, referenceProfile)) {
-        const updatedProfile = updateReferenceProfile(referenceProfile, behavioralVector);
+        const updatedProfile: BehavioralVector = updateReferenceProfile(referenceProfile, behavioralVector);
         setUserProfile(prev => ({ ...prev, referenceProfile: updatedProfile }));
         await AsyncStorage.setItem('userBehavioralProfile', JSON.stringify({
           ...userProfile,
           referenceProfile: updatedProfile
         }));
       }
-      
+
       return {
         authentication_result: decision,
         behavioral_vector: behavioralVector,
@@ -231,20 +303,23 @@ export default function SendMoneyScreen() {
         timestamp: sensorData.timestamp,
         session_info: sensorData.screenInfo
       };
-      
-    } catch (error) {
+    } catch (error: any) {
       console.error('T1 Authentication Error:', error);
       return {
         error: `Authentication failed: ${error.message}`,
-        authentication_result: { decision: 'ERROR', confidence: 0, risk_level: 'HIGH' }
+        authentication_result: { decision: 'ERROR', confidence: 0, risk_level: 'HIGH' } as AuthenticationResult,
+        behavioral_vector: [],
+        anomaly_score: null,
+        rule_flags: [],
+        reference_profile: [],
+        timestamp: '',
+        session_info: null
       };
     }
   };
 
-  // Extract behavioral vector from sensor data
   const extractBehavioralVector = (sensorData) => {
     const typingStats = sensorData.typingStats || {};
-    
     return [
       typingStats.accuracy || 0,
       typingStats.averageFlightTime || 0,
@@ -259,15 +334,14 @@ export default function SendMoneyScreen() {
     ];
   };
 
-  // Compute anomaly score
   const computeAnomalyScore = (behavioralVector, referenceProfile) => {
     if (behavioralVector.filter(v => v !== 0).length < 4) {
       return null; // Insufficient data
     }
-    
+
     let totalDeviation = 0;
     let validMetrics = 0;
-    
+
     for (let i = 0; i < behavioralVector.length; i++) {
       if (behavioralVector[i] !== 0 && referenceProfile[i] !== 0) {
         const deviation = Math.abs(behavioralVector[i] - referenceProfile[i]) / (referenceProfile[i] * 0.1 + 1e-8);
@@ -275,7 +349,7 @@ export default function SendMoneyScreen() {
         validMetrics++;
       }
     }
-    
+
     return validMetrics > 0 ? totalDeviation / validMetrics : null;
   };
 
@@ -284,7 +358,7 @@ export default function SendMoneyScreen() {
     const flags = [];
     const deviceMetrics = sensorData.deviceMetrics || {};
     const gpsLocation = deviceMetrics.gpsLocation;
-    
+
     // Location-based checks
     if (gpsLocation && userProfile.lastLoginLocation) {
       const distance = calculateDistance(
@@ -293,28 +367,27 @@ export default function SendMoneyScreen() {
         gpsLocation.latitude,
         gpsLocation.longitude
       );
-      
       if (distance > 10) {
         flags.push(`Unusual login distance (${distance.toFixed(1)}km)`);
       }
     }
-    
+
     // Typing behavior checks
     const typingStats = sensorData.typingStats || {};
     if (typingStats.accuracy !== 0 && typingStats.accuracy < 50) {
       flags.push('Suspicious typing accuracy');
     }
-    
+
     if (typingStats.errorRate !== 0 && typingStats.errorRate > 15) {
       flags.push('High error rate detected');
     }
-    
+
     // Network checks
     const networkInfo = deviceMetrics.networkInfo || {};
     if (!networkInfo.isConnected) {
       flags.push('Network connectivity issues');
     }
-    
+
     return flags;
   };
 
@@ -324,8 +397,8 @@ export default function SendMoneyScreen() {
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return R * c;
   };
@@ -334,7 +407,7 @@ export default function SendMoneyScreen() {
   const makeAuthenticationDecision = (anomalyScore, ruleFlags, sensorData) => {
     const T_PASS = 200.0;
     const T_ESC_T2 = 300.5;
-    
+
     if (anomalyScore === null) {
       return {
         decision: "SKIP_INTERVAL",
@@ -343,7 +416,7 @@ export default function SendMoneyScreen() {
         risk_level: 'LOW'
       };
     }
-    
+
     if (anomalyScore < T_PASS && ruleFlags.length === 0) {
       return {
         decision: "PASS",
@@ -378,7 +451,7 @@ export default function SendMoneyScreen() {
   const updateReferenceProfile = (referenceProfile, behavioralVector) => {
     const alpha = 0.05; // Learning rate
     const updatedProfile = [];
-    
+
     for (let i = 0; i < referenceProfile.length; i++) {
       if (behavioralVector[i] !== 0) {
         updatedProfile[i] = alpha * behavioralVector[i] + (1 - alpha) * referenceProfile[i];
@@ -386,33 +459,29 @@ export default function SendMoneyScreen() {
         updatedProfile[i] = referenceProfile[i];
       }
     }
-    
+
     return updatedProfile;
   };
 
   // Handle authentication results
   const handleAuthenticationResult = (authResult) => {
     const decision = authResult.authentication_result?.decision;
-    
+
     switch (decision) {
       case 'PASS':
         console.log('✅ User authenticated successfully');
         break;
-        
       case 'ESCALATE_TO_T2':
         console.log('⚠️ Escalating to T2 verification');
         triggerT2Verification(authResult);
         break;
-        
       case 'ESCALATE_TO_T3':
         console.log('🚨 Escalating to T3 verification');
         triggerT3Verification(authResult);
         break;
-        
       case 'SKIP_INTERVAL':
         console.log('⏭️ Skipping this interval');
         break;
-        
       default:
         console.log('❌ Authentication error');
         break;
@@ -427,7 +496,6 @@ export default function SendMoneyScreen() {
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Verify', onPress: () => {
-          // Implement T2 verification (OTP, biometric, etc.)
           console.log('T2 verification triggered');
         }}
       ]
@@ -441,7 +509,6 @@ export default function SendMoneyScreen() {
       'Unusual activity detected. Please contact customer support.',
       [
         { text: 'OK', onPress: () => {
-          // Implement T3 verification or redirect to support
           console.log('T3 verification triggered');
         }}
       ]
@@ -465,25 +532,23 @@ export default function SendMoneyScreen() {
     setFocusedInput(null);
     setIsActivelyTyping(false);
     console.log(`📝 Input blurred: ${inputName} - disabling typing tracking`);
-    
     if (typingTimeout) {
       clearTimeout(typingTimeout);
       setTypingTimeout(null);
     }
   };
 
-  // Modified data collection that only includes typing data when actively typing
   const collectDataSnapshot = async () => {
     const currentTime = Date.now();
     const sessionDuration = (currentTime - sessionStartTime.current) / 1000;
     const captchaDuration = captchaStartTime.current ? (currentTime - captchaStartTime.current) / 1000 : 0;
-    
-    const typingStats = isActivelyTyping || captchaVisible ? 
-      buildEnhancedTypingStats(sessionDuration, captchaDuration) : 
+
+    const typingStats = isActivelyTyping || captchaVisible ?
+      buildEnhancedTypingStats(sessionDuration, captchaDuration) :
       buildBasicStats(sessionDuration);
-    
+
     const updatedDeviceMetrics = await updateDeviceMetrics();
-    
+
     return {
       timestamp: new Date().toISOString(),
       sessionId: uuidv4(),
@@ -574,10 +639,9 @@ export default function SendMoneyScreen() {
   const calculateActiveTypingDuration = () => {
     const activeKeystrokes = keystrokeData.filter(k => k.isActiveTyping);
     if (activeKeystrokes.length < 2) return 0;
-    
+
     const firstActiveKeystroke = activeKeystrokes[0].timestamp;
     const lastActiveKeystroke = activeKeystrokes[activeKeystrokes.length - 1].timestamp;
-    
     return (lastActiveKeystroke - firstActiveKeystroke) / 1000;
   };
 
@@ -585,7 +649,6 @@ export default function SendMoneyScreen() {
   const initializeDeviceMetrics = async () => {
     try {
       let deviceUUID = await AsyncStorage.getItem('secure_deviceid');
-      
       if (deviceUUID) {
         try {
           if (deviceUUID.startsWith('{') || deviceUUID.startsWith('[') || deviceUUID.startsWith('"')) {
@@ -599,8 +662,8 @@ export default function SendMoneyScreen() {
       }
 
       const ipAddress = await Network.getIpAddressAsync();
-      
       let gpsLocation = null;
+
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
@@ -613,7 +676,7 @@ export default function SendMoneyScreen() {
             accuracy: location.coords.accuracy,
             timestamp: location.timestamp,
           };
-          
+
           // Update user profile with current location
           setUserProfile(prev => ({
             ...prev,
@@ -625,7 +688,7 @@ export default function SendMoneyScreen() {
       }
 
       const networkState = await Network.getNetworkStateAsync();
-      
+
       setDeviceMetrics({
         keyboardLatency: [],
         ipAddress: ipAddress || '0.0.0.0',
@@ -650,7 +713,6 @@ export default function SendMoneyScreen() {
       });
     } catch (error) {
       console.error('Error initializing device metrics:', error);
-      
       setDeviceMetrics({
         keyboardLatency: [],
         ipAddress: '0.0.0.0',
@@ -684,25 +746,24 @@ export default function SendMoneyScreen() {
   // Enhanced keystroke tracking that detects active typing
   const trackKeystroke = (key, isBackspace = false) => {
     const currentTime = Date.now();
-    
+
     if (!captchaVisible && !isFormInputFocused()) {
       return;
     }
-    
+
     setIsActivelyTyping(true);
     setLastTypingTime(currentTime);
-    
+
     if (typingTimeout) {
       clearTimeout(typingTimeout);
     }
-    
+
     const newTimeout = setTimeout(() => {
       setIsActivelyTyping(false);
       console.log('🛑 Typing stopped - pausing keystroke tracking');
     }, TYPING_TIMEOUT_DURATION);
-    
     setTypingTimeout(newTimeout);
-    
+
     const keystroke = {
       key,
       timestamp: currentTime,
@@ -713,10 +774,10 @@ export default function SendMoneyScreen() {
       position: captchaInput.length,
       isActiveTyping: true
     };
-    
+
     setKeystrokeData(prev => [...prev.slice(-50), keystroke]);
     lastInteractionTime.current = currentTime;
-    
+
     const interaction = {
       type: 'keystroke',
       target: isBackspace ? 'backspace' : 'typing',
@@ -724,31 +785,31 @@ export default function SendMoneyScreen() {
       duration: keystroke.dwellTime,
       isActiveTyping: true
     };
-    
+
     setInteractionData(prev => [...prev.slice(-100), interaction]);
-    
     console.log('⌨️ Keystroke tracked during active typing:', key);
   };
 
   // Enhanced touch tracking
   const trackTouch = (type, coordinates = {}) => {
     const currentTime = Date.now();
+
     const touch = {
       type,
       timestamp: currentTime,
       ...coordinates
     };
-    
+
     setTouchData(prev => [...prev.slice(-30), touch]);
     lastInteractionTime.current = currentTime;
-    
+
     const interaction = {
       type: 'touch',
       target: coordinates.target || type,
       timestamp: currentTime,
       duration: Math.floor(Math.random() * 200) + 100
     };
-    
+
     setInteractionData(prev => [...prev.slice(-100), interaction]);
   };
 
@@ -758,7 +819,7 @@ export default function SendMoneyScreen() {
     const totalTime = Math.max(captchaDuration || sessionDuration, 1);
     const inputLength = captchaInput.length;
     const targetLength = captchaSentence.length;
-    
+
     return {
       wpm: Math.round((totalWords / totalTime) * 60),
       accuracy: typingAccuracy,
@@ -774,7 +835,7 @@ export default function SendMoneyScreen() {
       averageFlightTime: calculateAverageFlightTime(),
       averageTapRhythm: calculateAverageTapRhythm(),
       backspaceCount: keystrokeData.filter(k => k.isBackspace).length,
-      averageKeyboardLatency: deviceMetrics.keyboardLatency?.length > 0 
+      averageKeyboardLatency: deviceMetrics.keyboardLatency?.length > 0
         ? Math.round(deviceMetrics.keyboardLatency.reduce((a, b) => a + b, 0) / deviceMetrics.keyboardLatency.length)
         : 45,
       completionPercentage: targetLength > 0 ? Math.round((inputLength / targetLength) * 100) : 0,
@@ -881,8 +942,7 @@ export default function SendMoneyScreen() {
       acc[item.target] = (acc[item.target] || 0) + 1;
       return acc;
     }, {});
-    
-    return Object.entries(featureCount).reduce((a, b) => 
+    return Object.entries(featureCount).reduce((a, b) =>
       featureCount[a[0]] > featureCount[b[0]] ? a : b, ['none', 0])[0];
   };
 
@@ -905,14 +965,14 @@ export default function SendMoneyScreen() {
   const calculateCorrectionSpeed = () => {
     const corrections = keystrokeData.filter(k => k.isBackspace);
     if (corrections.length === 0) return 0;
-    
+
     let totalCorrectionTime = 0;
     corrections.forEach((correction, index) => {
       if (index < corrections.length - 1) {
         totalCorrectionTime += corrections[index + 1].timestamp - correction.timestamp;
       }
     });
-    
+
     return corrections.length > 1 ? totalCorrectionTime / (corrections.length - 1) : 0;
   };
 
@@ -926,28 +986,28 @@ export default function SendMoneyScreen() {
 
   const calculateTypingRhythm = () => {
     if (keystrokeData.length < 3) return 'insufficient_data';
-    
+
     const intervals = [];
     for (let i = 1; i < keystrokeData.length; i++) {
       intervals.push(keystrokeData[i].timestamp - keystrokeData[i-1].timestamp);
     }
-    
+
     const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
     const variance = intervals.reduce((sum, interval) => sum + Math.pow(interval - avgInterval, 2), 0) / intervals.length;
-    
+
     if (variance < 2500) return 'steady';
     if (variance < 10000) return 'moderate';
     return 'irregular';
   };
 
   const calculatePausePattern = () => {
-    const longPauses = keystrokeData.filter((k, i) => 
+    const longPauses = keystrokeData.filter((k, i) =>
       i > 0 && k.timestamp - keystrokeData[i-1].timestamp > 1000
     );
-    
+
     return {
       longPauseCount: longPauses.length,
-      averagePauseLength: longPauses.length > 0 ? 
+      averagePauseLength: longPauses.length > 0 ?
         longPauses.reduce((sum, pause, i) => sum + (pause.timestamp - keystrokeData[keystrokeData.indexOf(pause) - 1].timestamp), 0) / longPauses.length : 0,
       pauseFrequency: keystrokeData.length > 0 ? longPauses.length / keystrokeData.length : 0
     };
@@ -955,7 +1015,6 @@ export default function SendMoneyScreen() {
 
   const calculateCorrectionPattern = () => {
     const corrections = keystrokeData.filter(k => k.isBackspace);
-    
     return {
       immediateCorrections: corrections.filter((correction, i) => {
         const prevIndex = keystrokeData.indexOf(correction) - 1;
@@ -982,14 +1041,14 @@ export default function SendMoneyScreen() {
 
   const calculateAverageResponseTime = () => {
     if (interactionData.length === 0) return 0;
-    
+
     let totalResponseTime = 0;
     interactionData.forEach((interaction, index) => {
       if (index > 0) {
         totalResponseTime += interaction.timestamp - interactionData[index - 1].timestamp;
       }
     });
-    
+
     return interactionData.length > 1 ? totalResponseTime / (interactionData.length - 1) : 0;
   };
 
@@ -998,7 +1057,7 @@ export default function SendMoneyScreen() {
     try {
       const newLatency = Math.floor(Math.random() * 50) + 30;
       const updatedLatency = [...(deviceMetrics.keyboardLatency || []), newLatency].slice(-10);
-      
+
       let currentGpsLocation = deviceMetrics.gpsLocation;
       try {
         const location = await Location.getCurrentPositionAsync({
@@ -1030,45 +1089,6 @@ export default function SendMoneyScreen() {
     }
   };
 
-  // Save behavioral data to backend
-  const saveBehavioralData = async (typingStats, deviceMetrics) => {
-    try {
-      const sessionToken = await AsyncStorage.getItem('authToken');
-      if (!sessionToken) {
-        console.log('❌ No auth token found for behavioral data');
-        return;
-      }
-
-      const behavioralData = {
-        typingStats,
-        deviceMetrics,
-        authenticationResult: lastAuthResult
-      };
-
-      console.log('📤 Sending behavioral data with T1 results:', JSON.stringify(behavioralData, null, 2));
-
-      const response = await fetch(`${API_BASE_URL}/api/behavior/navigation`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionToken}`,
-          'ngrok-skip-browser-warning': 'true'
-        },
-        body: JSON.stringify({ sessionData: behavioralData })
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        console.log('✅ Behavioral data sent successfully');
-      } else {
-        console.error('❌ Failed to send behavioral data:', result.message);
-      }
-    } catch (error) {
-      console.error('❌ Error sending behavioral data:', error);
-    }
-  };
-
   // Generate typing sentences for CAPTCHA
   const generateTypingSentence = () => {
     const sentences = [
@@ -1096,16 +1116,16 @@ export default function SendMoneyScreen() {
   // Calculate typing accuracy in real-time
   const calculateTypingAccuracy = (typed, target) => {
     if (typed.length === 0) return 0;
-    
+
     let correctChars = 0;
     const minLength = Math.min(typed.length, target.length);
-    
+
     for (let i = 0; i < minLength; i++) {
       if (typed[i] === target[i]) {
         correctChars++;
       }
     }
-    
+
     return Math.round((correctChars / target.length) * 100);
   };
 
@@ -1114,14 +1134,13 @@ export default function SendMoneyScreen() {
       Alert.alert('Error', 'Please fill all required fields');
       return;
     }
-    
+
     if (selectedMethod === 'UPI' && !upiId) {
       Alert.alert('Error', 'Please enter UPI ID');
       return;
     }
-    
+
     setSamplingActive(false);
-    
     const sentence = generateTypingSentence();
     setCaptchaSentence(sentence);
     setCaptchaInput('');
@@ -1130,37 +1149,35 @@ export default function SendMoneyScreen() {
     setCaptchaVisible(true);
     setStartTime(Date.now());
     captchaStartTime.current = Date.now();
-    
     trackTouch('captcha_start', { target: 'captcha_modal' });
   };
 
   // Enhanced CAPTCHA input handling
   const handleTypingInput = (text) => {
     setCaptchaInput(text);
-    
+
     if (text.length > captchaInput.length) {
       const newChar = text[text.length - 1];
       trackKeystroke(newChar);
     } else if (text.length < captchaInput.length) {
       trackKeystroke('Backspace', true);
     }
-    
+
     const accuracy = calculateTypingAccuracy(text, captchaSentence);
     setTypingAccuracy(accuracy);
-    
+
     const isComplete = text.length >= captchaSentence.length;
     const isAccurate = accuracy >= 95;
-    
     setIsTypingComplete(isComplete && isAccurate);
   };
 
   // Enhanced typing verification with T1 model integration
   const verifyTyping = async () => {
     const accuracy = calculateTypingAccuracy(captchaInput, captchaSentence);
-    
+
     if (accuracy < 95) {
       Alert.alert(
-        'Typing Verification Failed', 
+        'Typing Verification Failed',
         `Please type the sentence more accurately. Current accuracy: ${accuracy}%\nRequired: 95%`,
         [
           {
@@ -1183,44 +1200,44 @@ export default function SendMoneyScreen() {
       );
       return;
     }
-    
+
     if (captchaInput.length < captchaSentence.length) {
       Alert.alert('Incomplete', 'Please complete typing the entire sentence.');
       return;
     }
-    
+
     // Perform final T1 behavioral authentication
     const finalT1Data = await collectDataForT1Model();
     const finalAuthResult = await performBehavioralAuthentication(finalT1Data);
-    
+
     console.log('🎯 Final T1 Authentication Result:', finalAuthResult);
-    
+
     // Check T1 authentication result
     const authDecision = finalAuthResult.authentication_result?.decision;
-    
+
     if (authDecision === 'ESCALATE_TO_T2' || authDecision === 'ESCALATE_TO_T3') {
       handleAuthenticationResult(finalAuthResult);
       return;
     }
-    
+
     // Collect final CAPTCHA completion snapshot
-    const completionSnapshot = await collectDataSnapshot();
-    completionSnapshot.captchaCompletion = {
-      completed: true,
-      finalAccuracy: accuracy,
-      completionTime: Date.now(),
-      totalDuration: (Date.now() - captchaStartTime.current) / 1000,
-      finalTypingStats: buildEnhancedTypingStats(0, (Date.now() - captchaStartTime.current) / 1000),
-      t1AuthResult: finalAuthResult
-    };
-    
-    console.log('🎉 CAPTCHA Completion Snapshot with T1 Auth:', JSON.stringify(completionSnapshot, null, 2));
-    await AsyncStorage.setItem('captchaCompletionSnapshot', JSON.stringify(completionSnapshot));
-    
+    // const completionSnapshot = await collectDataSnapshot();
+    // completionSnapshot.captchaCompletion = {
+    //   completed: true,
+    //   finalAccuracy: accuracy,
+    //   completionTime: Date.now(),
+    //   totalDuration: (Date.now() - captchaStartTime.current) / 1000,
+    //   finalTypingStats: buildEnhancedTypingStats(0, (Date.now() - captchaStartTime.current) / 1000),
+    //   t1AuthResult: finalAuthResult
+    // };
+
+    // console.log('🎉 CAPTCHA Completion Snapshot with T1 Auth:', JSON.stringify(completionSnapshot, null, 2));
+    // await AsyncStorage.setItem('captchaCompletionSnapshot', JSON.stringify(completionSnapshot));
+
     setSamplingActive(true);
     setCaptchaVisible(false);
     trackTouch('captcha_verified', { target: 'verify_button' });
-    
+
     Alert.alert(
       'Confirm Transaction',
       `Send ₹${amount} to ${recipient}${selectedMethod === 'UPI' ? ` (${upiId})` : ''}?`,
@@ -1242,12 +1259,12 @@ export default function SendMoneyScreen() {
       totalSessionDuration: (Date.now() - sessionStartTime.current) / 1000,
       finalAuthStatus: authenticationStatus
     };
-    
-    console.log('💰 Transaction Completion Snapshot:', JSON.stringify(transactionSnapshot, null, 2));
-    await AsyncStorage.setItem('transactionCompletionSnapshot', JSON.stringify(transactionSnapshot));
-    
+
+    // console.log('💰 Transaction Completion Snapshot:', JSON.stringify(transactionSnapshot, null, 2));
+    // await AsyncStorage.setItem('transactionCompletionSnapshot', JSON.stringify(transactionSnapshot));
+
     trackTouch('transaction_completed', { target: 'confirm_transaction' });
-    
+
     Alert.alert('Success', 'Money sent successfully!', [
       { text: 'OK', onPress: () => router.back() }
     ]);
@@ -1261,9 +1278,7 @@ export default function SendMoneyScreen() {
     setIsTypingComplete(false);
     setStartTime(Date.now());
     captchaStartTime.current = Date.now();
-    
     setKeystrokeData([]);
-    
     trackTouch('captcha_refreshed', { target: 'refresh_captcha' });
   };
 
@@ -1289,7 +1304,7 @@ export default function SendMoneyScreen() {
     return captchaSentence.split('').map((char, index) => {
       let backgroundColor = 'transparent';
       let color = '#666';
-      
+
       if (index < captchaInput.length) {
         if (captchaInput[index] === char) {
           backgroundColor = '#E8F5E8';
@@ -1302,14 +1317,11 @@ export default function SendMoneyScreen() {
         backgroundColor = '#E3F2FD';
         color = '#1976D2';
       }
-      
+
       return (
         <Text
           key={index}
-          style={[
-            styles.highlightChar,
-            { backgroundColor, color }
-          ]}
+          style={[styles.highlightChar, { backgroundColor, color }]}
         >
           {char}
         </Text>
@@ -1319,21 +1331,24 @@ export default function SendMoneyScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <LinearGradient colors={['#019EEC', '#0080CC']} style={styles.header}>
-        <TouchableOpacity onPress={() => {
-          trackTouch('navigation', { target: 'back_button' });
-          router.back();
-        }}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+      <LinearGradient
+        colors={['#019EEC', '#0078C9']}
+        style={styles.header}
+      >
+        <TouchableOpacity
+          onPress={() => {
+            trackTouch('navigation', { target: 'back_button' });
+            router.back();
+          }}
+        >
+          <Ionicons name="arrow-back" size={24} color="white" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Send Money</Text>
         <View style={{ width: 24 }} />
       </LinearGradient>
 
-      <ScrollView 
-        style={styles.content} 
-        showsVerticalScrollIndicator={false}
+      <ScrollView
+        style={styles.content}
         onScroll={() => trackTouch('scroll', { target: 'main_scroll' })}
         scrollEventThrottle={1000}
       >
@@ -1452,19 +1467,19 @@ export default function SendMoneyScreen() {
         </View>
 
         {/* Send Button */}
-        <TouchableOpacity 
-          style={styles.sendButton} 
+        <TouchableOpacity
+          style={styles.sendButton}
           onPress={() => {
             trackTouch('tap', { target: 'send_money_button' });
             handleSendMoney();
           }}
         >
           <LinearGradient
-            colors={['#019EEC', '#0080CC']}
+            colors={['#019EEC', '#0078C9']}
             style={styles.sendGradient}
           >
+            <Ionicons name="send" size={20} color="white" />
             <Text style={styles.sendButtonText}>Send Money</Text>
-            <Ionicons name="send" size={20} color="#fff" />
           </LinearGradient>
         </TouchableOpacity>
 
@@ -1472,24 +1487,12 @@ export default function SendMoneyScreen() {
         {jsonSnapshot && (
           <View style={styles.monitoringStatus}>
             <Text style={styles.monitoringTitle}>🔐 T1 Behavioral Authentication</Text>
-            <Text style={styles.monitoringText}>
-              Last Update: {new Date(jsonSnapshot.timestamp).toLocaleTimeString()}
-            </Text>
-            <Text style={styles.monitoringText}>
-              Session Duration: {Math.round(jsonSnapshot.screenInfo?.sessionDuration || 0)}s
-            </Text>
-            <Text style={styles.monitoringText}>
-              Interactions: {jsonSnapshot.interactionStats?.totalInteractions || 0}
-            </Text>
-            <Text style={styles.monitoringText}>
-              Form Progress: {jsonSnapshot.screenInfo?.formProgress || 0}%
-            </Text>
-            <Text style={styles.monitoringText}>
-              Currently Typing: {isActivelyTyping ? '✅ Yes' : '❌ No'}
-            </Text>
-            <Text style={styles.monitoringText}>
-              Focused Input: {focusedInput || 'None'}
-            </Text>
+            <Text style={styles.monitoringText}>Last Update: {new Date(jsonSnapshot.timestamp).toLocaleTimeString()}</Text>
+            <Text style={styles.monitoringText}>Session Duration: {Math.round(jsonSnapshot.screenInfo?.sessionDuration || 0)}s</Text>
+            <Text style={styles.monitoringText}>Interactions: {jsonSnapshot.interactionStats?.totalInteractions || 0}</Text>
+            <Text style={styles.monitoringText}>Form Progress: {jsonSnapshot.screenInfo?.formProgress || 0}%</Text>
+            <Text style={styles.monitoringText}>Currently Typing: {isActivelyTyping ? '✅ Yes' : '❌ No'}</Text>
+            <Text style={styles.monitoringText}>Focused Input: {focusedInput || 'None'}</Text>
             <Text style={[styles.authStatusText, { color: getAuthStatusColor() }]}>
               Auth Status: {authenticationStatus}
             </Text>
@@ -1504,9 +1507,9 @@ export default function SendMoneyScreen() {
 
       {/* Enhanced Scrollable Typing CAPTCHA Verification Modal */}
       <Modal
-        transparent
-        animationType="slide"
         visible={captchaVisible}
+        animationType="slide"
+        transparent={true}
         onRequestClose={() => {
           setCaptchaVisible(false);
           setSamplingActive(true);
@@ -1514,38 +1517,35 @@ export default function SendMoneyScreen() {
         }}
       >
         <KeyboardAvoidingView 
-          style={styles.modalBackdrop}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalBackdrop}
         >
           <View style={styles.modalContainer}>
             <View style={styles.modalBox}>
               <ScrollView 
                 style={styles.modalScrollView}
-                contentContainerStyle={styles.modalScrollContent}
-                showsVerticalScrollIndicator={true}
-                keyboardShouldPersistTaps="handled"
-                bounces={false}
                 onScroll={() => trackTouch('scroll', { target: 'captcha_scroll' })}
               >
-                <View style={styles.modalHeader}>
-                  <Ionicons name="create-outline" size={32} color="#019EEC" />
-                  <Text style={styles.modalTitle}>T1 Behavioral Verification</Text>
-                  <Text style={styles.modalSubtitle}>
-                    Type the sentence below exactly as shown (95% accuracy required)
-                  </Text>
-                  <Text style={[styles.authStatusIndicator, { color: getAuthStatusColor() }]}>
-                    Current Auth Status: {authenticationStatus}
-                  </Text>
-                </View>
-
-                {/* Sentence Display with Highlighting */}
-                <View style={styles.sentenceContainer}>
-                  <Text style={styles.sentenceLabel}>Type this sentence:</Text>
-                  <View style={styles.sentenceHolder}>
-                    {renderHighlightedText()}
+                <View style={styles.modalScrollContent}>
+                  <View style={styles.modalHeader}>
+                    <Text style={styles.modalTitle}>T1 Behavioral Verification</Text>
+                    <Text style={styles.modalSubtitle}>
+                      Type the sentence below exactly as shown (95% accuracy required)
+                    </Text>
+                    <Text style={[styles.authStatusIndicator, { color: getAuthStatusColor() }]}>
+                      Current Auth Status: {authenticationStatus}
+                    </Text>
                   </View>
 
-                                    {/* Enhanced Accuracy Indicator */}
+                  {/* Sentence Display with Highlighting */}
+                  <View style={styles.sentenceContainer}>
+                    <Text style={styles.sentenceLabel}>Type this sentence:</Text>
+                    <View style={styles.sentenceHolder}>
+                      {renderHighlightedText()}
+                    </View>
+                  </View>
+
+                  {/* Enhanced Accuracy Indicator */}
                   <View style={styles.accuracyContainer}>
                     <View style={styles.accuracyInfo}>
                       <Text style={styles.accuracyLabel}>Accuracy:</Text>
@@ -1554,17 +1554,17 @@ export default function SendMoneyScreen() {
                       </Text>
                     </View>
                     <View style={styles.progressBar}>
-                      <View 
+                      <View
                         style={[
-                          styles.progressFill, 
-                          { 
+                          styles.progressFill,
+                          {
                             width: `${typingAccuracy}%`,
                             backgroundColor: getAccuracyColor()
                           }
-                        ]} 
+                        ]}
                       />
                     </View>
-                    
+
                     {/* Additional Metrics with T1 Model Data */}
                     <View style={styles.additionalMetrics}>
                       <Text style={styles.metricText}>
@@ -1576,109 +1576,112 @@ export default function SendMoneyScreen() {
                       <Text style={styles.metricText}>
                         Active Typing: {isActivelyTyping ? '✅' : '❌'}
                       </Text>
-                      <Text style={[styles.metricText, { color: getAuthStatusColor() }]}>
+                      <Text style={styles.metricText}>
                         T1 Status: {authenticationStatus}
                       </Text>
                     </View>
                   </View>
-                </View>
 
-                {/* Typing Input */}
-                <View style={styles.inputSection}>
-                  <Text style={styles.inputSectionLabel}>Your typing:</Text>
-                  <TextInput
-                    style={styles.typingInput}
-                    placeholder="Start typing here..."
-                    value={captchaInput}
-                    onChangeText={handleTypingInput}
-                    onFocus={() => {
-                      handleInputFocus('captcha_input');
-                      console.log('🎯 CAPTCHA typing started');
-                    }}
-                    onBlur={() => {
-                      handleInputBlur('captcha_input');
-                      console.log('🎯 CAPTCHA typing paused');
-                    }}
-                    multiline
-                    autoFocus
-                    textAlignVertical="top"
-                  />
+                  {/* Typing Input */}
+                  <View style={styles.inputSection}>
+                    <Text style={styles.inputSectionLabel}>Your typing:</Text>
+                    <TextInput
+                      style={styles.typingInput}
+                      value={captchaInput}
+                      onChangeText={handleTypingInput}
+                      onFocus={() => {
+                        handleInputFocus('captcha_input');
+                        console.log('🎯 CAPTCHA typing started');
+                      }}
+                      onBlur={() => {
+                        handleInputBlur('captcha_input');
+                        console.log('🎯 CAPTCHA typing paused');
+                      }}
+                      multiline
+                      autoFocus
+                      textAlignVertical="top"
+                    />
 
-                  {/* Enhanced Character Count */}
-                  <View style={styles.characterCountContainer}>
-                    <Text style={styles.characterCount}>
-                      {captchaInput.length} / {captchaSentence.length} characters
-                    </Text>
-                    <Text style={styles.completionIndicator}>
-                      {isTypingComplete ? '✅ Ready to verify' : '⏳ Keep typing...'}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* T1 Model Real-time Feedback */}
-                {lastAuthResult && (
-                  <View style={styles.t1FeedbackContainer}>
-                    <Text style={styles.t1FeedbackTitle}>🤖 T1 Model Analysis</Text>
-                    <View style={styles.t1MetricsGrid}>
-                      <View style={styles.t1Metric}>
-                        <Text style={styles.t1MetricLabel}>Anomaly Score</Text>
-                        <Text style={styles.t1MetricValue}>
-                          {lastAuthResult.anomaly_score?.toFixed(2) || 'N/A'}
-                        </Text>
-                      </View>
-                      <View style={styles.t1Metric}>
-                        <Text style={styles.t1MetricLabel}>Risk Level</Text>
-                        <Text style={[styles.t1MetricValue, { 
-                          color: lastAuthResult.authentication_result?.risk_level === 'HIGH' ? '#F44336' : 
-                                 lastAuthResult.authentication_result?.risk_level === 'MEDIUM' ? '#FF9800' : '#4CAF50'
-                        }]}>
-                          {lastAuthResult.authentication_result?.risk_level || 'UNKNOWN'}
-                        </Text>
-                      </View>
-                      <View style={styles.t1Metric}>
-                        <Text style={styles.t1MetricLabel}>Confidence</Text>
-                        <Text style={styles.t1MetricValue}>
-                          {(lastAuthResult.authentication_result?.confidence * 100)?.toFixed(0) || 0}%
-                        </Text>
-                      </View>
-                      <View style={styles.t1Metric}>
-                        <Text style={styles.t1MetricLabel}>Flags</Text>
-                        <Text style={styles.t1MetricValue}>
-                          {lastAuthResult.rule_flags?.length || 0}
-                        </Text>
-                      </View>
+                    {/* Enhanced Character Count */}
+                    <View style={styles.characterCountContainer}>
+                      <Text style={styles.characterCount}>
+                        {captchaInput.length} / {captchaSentence.length} characters
+                      </Text>
+                      <Text style={styles.completionIndicator}>
+                        {isTypingComplete ? '✅ Ready to verify' : '⏳ Keep typing...'}
+                      </Text>
                     </View>
-                    {lastAuthResult.rule_flags && lastAuthResult.rule_flags.length > 0 && (
-                      <View style={styles.flagsContainer}>
-                        <Text style={styles.flagsTitle}>⚠️ Detected Issues:</Text>
-                        {lastAuthResult.rule_flags.map((flag, index) => (
-                          <Text key={index} style={styles.flagText}>• {flag}</Text>
-                        ))}
-                      </View>
-                    )}
                   </View>
-                )}
 
-                {/* Action Buttons */}
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity 
-                    style={[
-                      styles.modalBtn,
-                      !isTypingComplete && styles.disabledBtn
-                    ]} 
-                    onPress={() => {
-                      trackTouch('tap', { target: 'verify_typing_button' });
-                      verifyTyping();
-                    }}
-                    disabled={!isTypingComplete}
-                  >
-                    <Text style={styles.modalBtnText}>
-                      {isTypingComplete ? 'Verify & Continue' : 'Complete Typing'}
-                    </Text>
-                  </TouchableOpacity>
+                  {/* T1 Model Real-time Feedback */}
+                  {lastAuthResult && (
+                    <View style={styles.t1FeedbackContainer}>
+                      <Text style={styles.t1FeedbackTitle}>🤖 T1 Model Analysis</Text>
+                      
+                      <View style={styles.t1MetricsGrid}>
+                        <View style={styles.t1Metric}>
+                          <Text style={styles.t1MetricLabel}>Anomaly Score</Text>
+                          <Text style={styles.t1MetricValue}>
+                            {lastAuthResult.anomaly_score?.toFixed(2) || 'N/A'}
+                          </Text>
+                        </View>
+                        
+                        <View style={styles.t1Metric}>
+                          <Text style={styles.t1MetricLabel}>Risk Level</Text>
+                          <Text style={styles.t1MetricValue}>
+                            {lastAuthResult.authentication_result?.risk_level || 'UNKNOWN'}
+                          </Text>
+                        </View>
+                        
+                        <View style={styles.t1Metric}>
+                          <Text style={styles.t1MetricLabel}>Confidence</Text>
+                          <Text style={styles.t1MetricValue}>
+                            {(lastAuthResult.authentication_result?.confidence * 100)?.toFixed(0) || 0}%
+                          </Text>
+                        </View>
+                        
+                        <View style={styles.t1Metric}>
+                          <Text style={styles.t1MetricLabel}>Flags</Text>
+                          <Text style={styles.t1MetricValue}>
+                            {lastAuthResult.rule_flags?.length || 0}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {lastAuthResult.rule_flags && lastAuthResult.rule_flags.length > 0 && (
+                        <View style={styles.flagsContainer}>
+                          <Text style={styles.flagsTitle}>⚠️ Detected Issues:</Text>
+                          {lastAuthResult.rule_flags.map((flag, index) => (
+                            <Text key={index} style={styles.flagText}>
+                              • {flag}
+                            </Text>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Action Buttons */}
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={[
+                        styles.modalBtn,
+                        !isTypingComplete && styles.disabledBtn
+                      ]}
+                      onPress={() => {
+                        trackTouch('tap', { target: 'verify_typing_button' });
+                        verifyTyping();
+                      }}
+                      disabled={!isTypingComplete}
+                    >
+                      <Text style={styles.modalBtnText}>
+                        {isTypingComplete ? 'Verify & Continue' : 'Complete Typing'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
 
                   <View style={styles.bottomButtons}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.refreshBtn}
                       onPress={() => {
                         trackTouch('tap', { target: 'refresh_captcha_button' });
@@ -1689,7 +1692,7 @@ export default function SendMoneyScreen() {
                       <Text style={styles.refreshBtnText}>New Sentence</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.cancelBtn}
                       onPress={() => {
                         setCaptchaVisible(false);
@@ -1700,10 +1703,10 @@ export default function SendMoneyScreen() {
                       <Text style={styles.cancelText}>Cancel</Text>
                     </TouchableOpacity>
                   </View>
-                </View>
 
-                {/* Extra space for keyboard */}
-                <View style={styles.keyboardSpace} />
+                  {/* Extra space for keyboard */}
+                  <View style={styles.keyboardSpace} />
+                </View>
               </ScrollView>
             </View>
           </View>
@@ -1796,7 +1799,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sendButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  
+
   // Enhanced Monitoring Status Styles with T1 Model
   monitoringStatus: {
     backgroundColor: '#fff',
@@ -1827,7 +1830,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 4,
   },
-  
+
   // Enhanced Modal Styles
   modalBackdrop: {
     flex: 1,
@@ -1855,9 +1858,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
-  modalTitle: { 
-    fontSize: 20, 
-    fontWeight: '600', 
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
     marginTop: 8,
     marginBottom: 8,
     color: '#333'
@@ -1944,7 +1947,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
     marginBottom: 4,
   },
-  
+
   // T1 Model Feedback Styles
   t1FeedbackContainer: {
     backgroundColor: '#f8f9fa',
@@ -2007,7 +2010,6 @@ const styles = StyleSheet.create({
     color: '#856404',
     marginBottom: 4,
   },
-  
   inputSection: {
     marginBottom: 20,
   },
@@ -2059,10 +2061,10 @@ const styles = StyleSheet.create({
   disabledBtn: {
     backgroundColor: '#ccc',
   },
-  modalBtnText: { 
-    color: '#fff', 
-    fontWeight: '600', 
-    fontSize: 16 
+  modalBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16
   },
   bottomButtons: {
     flexDirection: 'row',
@@ -2087,8 +2089,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
-  cancelText: { 
-    color: '#666', 
+  cancelText: {
+    color: '#666',
     fontSize: 14,
     fontWeight: '500'
   },

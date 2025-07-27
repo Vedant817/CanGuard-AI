@@ -35,8 +35,8 @@ export const getBehavioralData = async (): Promise<BehavioralDataResponse | null
     }
 
     const data: BehavioralDataResponse = await response.json();
-    if (data.success && data.fingerprint?.D?.sessionData?.typingStats) {
-      await AsyncStorage.setItem('behavioralData', JSON.stringify(data.fingerprint.D.sessionData.typingStats));
+    if (data.success) {
+      await AsyncStorage.setItem('behavioralData', JSON.stringify(data));
       console.log(`✅ Behavioral data retrieved and stored: ${data.count} records`);
     }
 
