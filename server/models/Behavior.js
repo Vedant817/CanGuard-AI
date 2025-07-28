@@ -41,15 +41,16 @@ const behavioralSchema = new mongoose.Schema({
          typingStats: {
           wpm: { type: Number, default: 0 },
           accuracy: { type: Number, default: 0 },
-          totalTime: { type: Number, default: 0 },
-          totalWords: { type: Number, default: 0 },
           typingSpeed: { type: Number, default: 0 },
-          errorRate: { type: Number, default: 0 },
-          correctChars: { type: Number, default: 0 },
+          errorRate: { type: Number, default: 0 },       
           averageKeyHoldTime: { type: Number, default: 0 },
           averageFlightTime: { type: Number, default: 0 },
           averageKeyboardLatency: { type: Number, default: 0 },
-          averageTapRhythm: { type: Number, default: 0 }
+          averageTapRhythm: { type: Number, default: 0 },
+          correctKeystrokes: { type: Number, default: 0 },
+          totalTime: { type: Number, default: 0 },
+          totalWords: { type: Number, default: 0 },
+          cpm: { type: Number, default: 0 },
         },
         
         timestamp: { type: Date, default: Date.now }
@@ -58,13 +59,17 @@ const behavioralSchema = new mongoose.Schema({
     
     D_std: {
       wpm: { type: Number, default: 0 },
-      accuracy: { type: Number, default: 0 },
-      typingSpeed: { type: Number, default: 0 },
-      errorRate: { type: Number, default: 0 },
-      averageKeyHoldTime: { type: Number, default: 0 },
-      averageFlightTime: { type: Number, default: 0 },
-      averageKeyboardLatency: { type: Number, default: 0 },
-      averageTapRhythm: { type: Number, default: 0 }
+          accuracy: { type: Number, default: 0 },
+          typingSpeed: { type: Number, default: 0 },
+          errorRate: { type: Number, default: 0 },       
+          averageKeyHoldTime: { type: Number, default: 0 },
+          averageFlightTime: { type: Number, default: 0 },
+          averageKeyboardLatency: { type: Number, default: 0 },
+          averageTapRhythm: { type: Number, default: 0 },
+          correctKeystrokes: { type: Number, default: 0 },
+          totalTime: { type: Number, default: 0 },
+          totalWords: { type: Number, default: 0 },
+          cpm: { type: Number, default: 0 },
     },
     
     features_used: { type: [String], default: [] },
