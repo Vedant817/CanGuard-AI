@@ -190,7 +190,7 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
       newThresholds = {
         tPass: 0.8,
         tEscT2: 2.0,
-        multiplier: 0.456,
+        multiplier: 1.45,
         toggleCount: newToggleCount
       };
       console.log('🔒 ULTRA-SENSITIVE: High-value transaction with note');
