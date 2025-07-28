@@ -1,6 +1,16 @@
 const Behavioral = require('../models/Behavior');
 const User = require('../models/User');
 
+// Import blockchain services
+const { analyzeUserDataSecurely, storeAnalysisResult } = require('../services/blockchainService');
+
+// Blockchain logging utility
+const blockchainLog = (message, data = {}) => {
+  if (process.env.ENABLE_BLOCKCHAIN_LOGS === 'true') {
+    console.log(`⛓️ [BehaviorController] ${message}`, JSON.stringify(data, null, 2));
+  }
+};
+
 exports.saveTypingDataWithVectors = async (req, res) => {
   try {
     const userId = req.userId;
@@ -188,6 +198,131 @@ exports.getBehavioralData = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error retrieving behavioral data',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Analyze user data securely using blockchain
+ */
+exports.analyzeUserDataSecurely = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { dataAccessGrant, userSecretKey, analysisType = 'T1' } = req.body;
+
+    blockchainLog('Received secure analysis request', {
+      userId,
+      requestId: dataAccessGrant?.requestId,
+      analysisType
+    });
+
+    if (!dataAccessGrant || !userSecretKey) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing dataAccessGrant or userSecretKey'
+      });
+    }
+
+    // Perform secure analysis
+    const analysisResult = await analyzeUserDataSecurely(
+      dataAccessGrant,
+      userSecretKey,
+      analysisType
+    );
+
+    if (!analysisResult.success) {
+      blockchainLog('Secure analysis failed', {
+        userId,
+        requestId: dataAccessGrant.requestId,
+        error: analysisResult.error
+      });
+
+      return res.status(500).json({
+        success: false,
+        message: analysisResult.message,
+        error: analysisResult.error
+      });
+    }
+
+    // Store aggregated analysis result
+    await storeAnalysisResult(userId, analysisResult.analysis, analysisResult.metadata);
+
+    blockchainLog('Secure analysis completed successfully', {
+      userId,
+      requestId: dataAccessGrant.requestId,
+      decision: analysisResult.analysis.decision,
+      confidence: analysisResult.analysis.confidence
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Secure analysis completed successfully',
+      data: {
+        decision: analysisResult.analysis.decision,
+        confidence: analysisResult.analysis.confidence,
+        riskLevel: analysisResult.analysis.riskLevel,
+        requestId: dataAccessGrant.requestId,
+        metadata: analysisResult.metadata
+      }
+    });
+
+  } catch (error) {
+    const userId = req.userId;
+    blockchainLog('Error in secure analysis', {
+      userId,
+      error: error.message
+    });
+
+    res.status(500).json({
+      success: false,
+      message: 'Secure analysis failed',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Request data permission for analysis
+ */
+exports.requestDataPermission = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { purpose, dataTypes, timeRange } = req.body;
+
+    blockchainLog('Data permission requested', {
+      userId,
+      purpose,
+      dataTypes,
+      timeRange
+    });
+
+    const requestId = `req_${userId}_${Date.now()}`;
+
+    // For now, we'll return the request details
+    // In a full implementation, this would trigger a permission request to the client
+    res.status(200).json({
+      success: true,
+      message: 'Data permission request created',
+      data: {
+        requestId,
+        purpose,
+        dataTypes,
+        timeRange,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    blockchainLog('Error creating permission request', {
+      userId: req.userId,
+      error: error.message
+    });
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create permission request',
       error: error.message
     });
   }

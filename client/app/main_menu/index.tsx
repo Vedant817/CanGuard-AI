@@ -13,6 +13,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { getToken,clearToken } from '@/utils/token';
 import {getUserProfile} from '@/app/api/user';
+// import { runBlockchainTests } from '@/__tests__/blockchainTest';
+import { Alert } from 'react-native';
 
 
 
@@ -50,6 +52,19 @@ export default function BankingDashboard() {
   await clearToken();
   router.replace('/');
 };
+
+  // Blockchain test handler  
+  const handleBlockchainTest = async () => {
+    console.log('🚀 Starting blockchain tests...');
+    try {
+      Alert.alert('🔗 Blockchain Test', 'Blockchain tests are temporarily disabled', [{ text: 'OK' }]);
+      // await runBlockchainTests();
+      // Alert.alert('✅ Tests Complete', 'Check console logs for detailed results');
+    } catch (error) {
+      Alert.alert('❌ Test Failed', `Error: ${error.message}`);
+      console.error('Blockchain test error:', error);
+    }
+  };
 
 
   const HeaderIcon = ({ name, color = '#019EEC' }: { name: string; color?: string }) => (
@@ -198,7 +213,7 @@ export default function BankingDashboard() {
             <ServiceCard icon="receipt-outline" title="Bill Pay" />
             <ServiceCard icon="wallet-outline" title="Card-less Cash" />
             <ServiceCard icon="business-outline" title="Other Bank Accounts" />
-            <ServiceCard icon="time-outline" title="History" />
+            <ServiceCard icon="shield-checkmark-outline" title="🔗 Blockchain Test" onPress={handleBlockchainTest} />
           </View>
         </View>
 

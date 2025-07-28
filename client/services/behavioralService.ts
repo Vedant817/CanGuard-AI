@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import API_BASE_URL from "@/config/api";
+import blockchainService from './blockchainService';
 
 export interface BehavioralDataResponse {
   success: boolean;
@@ -14,6 +15,43 @@ export interface BehavioralDataResponse {
     };
   };
 }
+
+/**
+ * Store behavioral data using blockchain
+ */
+export const storeBehavioralDataOnChain = async (data: any): Promise<boolean> => {
+  try {
+    console.log('🔗 Storing behavioral data on blockchain...', {
+      sessionId: data.sessionId,
+      timestamp: data.timestamp
+    });
+    
+    const result = await blockchainService.storeDataOnChain(data);
+    if (!result.success) {
+      throw new Error(`Blockchain storage failed: ${result.message}`);
+    }
+    
+    console.log('✅ Stored on blockchain successfully!', result.data);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to store behavioral data on blockchain:', error);
+    return false;
+  }
+};
+
+/**
+ * Get blockchain status for debugging
+ */
+export const getBlockchainStatus = async () => {
+  try {
+    const status = await blockchainService.getBlockchainStatus();
+    console.log('🔗 Blockchain Status:', status);
+    return status;
+  } catch (error) {
+    console.error('❌ Failed to get blockchain status:', error);
+    return null;
+  }
+};
 
 export const getBehavioralData = async (): Promise<BehavioralDataResponse | null> => {
   try {

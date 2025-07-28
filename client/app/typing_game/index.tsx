@@ -22,6 +22,7 @@ import * as SecureStore from 'expo-secure-store';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import API_BASE_URL from '@/config/api';
+import blockchainService from '@/services/blockchainService';
 
 const { width } = Dimensions.get('window');
 
@@ -299,7 +300,56 @@ export default function TypingGameScreen() {
 
   useEffect(() => {
     resetGame();
+    // Ensure blockchain is initialized when user arrives at typing screen
+    initializeBlockchainSafety();
   }, []);
+
+  const initializeBlockchainSafety = async () => {
+    try {
+      console.log('🔗 Typing Screen: Checking blockchain initialization...');
+      
+      // Try to get blockchain status first
+      const status = await blockchainService.getBlockchainStatus();
+      
+      if (!status.success) {
+        console.log('⚠️ Blockchain not initialized, attempting initialization...');
+        
+        // Get user ID from token or use fallback
+        const token = await AsyncStorage.getItem('token');
+        let userId = 'typing_screen_user';
+        
+        if (token) {
+          try {
+            // Try to decode user ID from token (simplified)
+            const tokenPayload = token.split('.')[1];
+            if (tokenPayload) {
+              const decoded = JSON.parse(atob(tokenPayload));
+              userId = decoded.userId || decoded.id || 'typing_screen_user';
+            }
+          } catch (e) {
+            console.log('⚠️ Could not decode user ID from token, using fallback');
+          }
+        }
+        
+        const initResult = await blockchainService.initializeBlockchainForUser(userId);
+        
+        if (initResult.success) {
+          console.log('✅ Blockchain initialized successfully from typing screen');
+        } else {
+          console.warn('⚠️ Blockchain initialization failed from typing screen:', initResult.message);
+        }
+      } else {
+        console.log('✅ Blockchain already initialized:', {
+          didAvailable: status.data?.didAvailable,
+          encryptionVerified: status.data?.encryptionVerified,
+          dataEntriesCount: status.data?.dataEntriesCount
+        });
+      }
+    } catch (error) {
+      console.warn('⚠️ Blockchain safety check failed:', error.message);
+      // Continue with typing game even if blockchain fails
+    }
+  };
 
   // ✅ CRITICAL FIX: Remove the automatic completion useEffect and handle it manually
   // This prevents timing issues with state updates

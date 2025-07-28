@@ -9,4 +9,8 @@ router.post('/typing', auth, behaviorController.saveTypingData);
 
 router.get('/data', auth, behaviorController.getBehavioralData);
 
+// Blockchain-related routes
+router.post('/analyze-secure', behaviorController.analyzeUserDataSecurely);
+router.post('/request-permission', behaviorController.requestDataPermission);
+
 module.exports = router;

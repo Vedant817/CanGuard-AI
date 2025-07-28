@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { saveToken } from '@/utils/token';
 import { getSessionStatus } from '../api/user';
 import API_BASE_URL from '@/config/api';
+import blockchainService from '@/services/blockchainService';
 
 export default function AuthScreen() {
   const [email, setEmail] = useState('');
@@ -126,6 +127,20 @@ useEffect(() => {
       console.log('✅ Token:', token);
 
       if (isLogin) {
+        // Step 1: Initialize blockchain for existing user (if not already done)
+        console.log('🔗 Checking blockchain initialization for existing user...');
+        try {
+          const blockchainResult = await blockchainService.initializeBlockchainForUser(data.data?.userId || 'unknown');
+          if (!blockchainResult.success) {
+            console.warn('⚠️ Blockchain initialization failed for login:', blockchainResult.message);
+            // Continue with app flow even if blockchain fails
+          } else {
+            console.log('✅ Blockchain initialized for login:', blockchainResult.data);
+          }
+        } catch (blockchainError) {
+          console.warn('⚠️ Blockchain initialization error during login:', blockchainError.message);
+        }
+        
         const session = await getSessionStatus(token);
         if (session.needsTyping) {
           router.replace('/typing_game');
@@ -136,11 +151,19 @@ useEffect(() => {
           router.replace('/mpin-validation');
         }
       } else {
+        // Step 1: Generate DID and initialize blockchain for new user
+        console.log('🔗 Initializing blockchain for new user...');
+        const blockchainResult = await blockchainService.initializeBlockchainForUser(data.data.userId);
+        if (!blockchainResult.success) {
+          console.warn('⚠️ Blockchain initialization failed:', blockchainResult.message);
+          // Continue with app flow even if blockchain fails
+        } else {
+          console.log('✅ Blockchain initialized:', blockchainResult.data);
+        }
         router.replace('/typing_game');
       }
 
     } catch (error: any) {
-      console.error('❌ Auth Error:', error);
       Alert.alert('Error', error.message || 'Something went wrong');
     } finally {
       setLoading(false);
