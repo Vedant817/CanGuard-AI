@@ -41,6 +41,7 @@
     "ipfs-core": "^0.18.1",
     "key-did-provider-ed25519": "^4.0.2",
     "orbit-db": "^0.29.0",
+    "@orbitdb/core": "^3.0.2",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-native": "0.79.5",
@@ -53,7 +54,13 @@
     "react-native-web": "~0.20.0",
     "react-native-webview": "13.13.5",
     "rxjs": "^7.8.2",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "buffer": "^6.0.3",
+    "react-native-keychain": "^8.2.0",
+    "@pinata/sdk": "^2.1.0",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1",
+    "socket.io-client": "^4.7.2"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
