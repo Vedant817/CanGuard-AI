@@ -174,19 +174,14 @@ useEffect(() => {
   loadStoredThresholds();
 }, []);
 
-// Function to toggle/adjust thresholds dynamically and save to AsyncStorage
-// Enhanced authentication logic with multiple threshold configurations
 const setAuthenticationThresholdsBasedOnNote = async () => {
   const newToggleCount = thresholdToggleCount + 1;
   let newThresholds;
   
-  // Get transaction amount for risk-based thresholds
   const transactionAmount = parseFloat(amount) || 0;
   
   if (note.trim().length > 5) {
-    // Note is filled - Choose sensitive configuration based on amount
     if (transactionAmount > 10000) {
-      // Case 0: Ultra-sensitive for high-value transactions
       newThresholds = {
         tPass: 0.8,
         tEscT2: 2.0,
@@ -195,7 +190,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
       };
       console.log('🔒 ULTRA-SENSITIVE: High-value transaction with note');
     } else if (transactionAmount > 5000) {
-      // Case 1: High-sensitive for medium-value transactions
       newThresholds = {
         tPass: 0.8,
         tEscT2: 2.0,
@@ -204,7 +198,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
       };
       console.log('🛡️ HIGH-SENSITIVE: Medium-value transaction with note');
     } else if (transactionAmount > 1000) {
-      // Case 2: Moderate-sensitive for regular transactions
       newThresholds = {
         tPass: 0.8,
         tEscT2: 2.0,
@@ -213,7 +206,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
       };
       console.log('⚖️ MODERATE-SENSITIVE: Regular transaction with note');
     } else {
-      // Case 3: Mild-sensitive for small transactions
       newThresholds = {
         tPass: 0.8,
         tEscT2: 5.0,
@@ -223,9 +215,7 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
       console.log('🤝 MILD-SENSITIVE: Small transaction with note');
     }
   } else {
-    // Note is empty - Choose relaxed configuration based on amount
     if (transactionAmount > 10000) {
-      // Case 4: Moderate-relaxed for high-value transactions without note
       newThresholds = {
         tPass: 50.0,
         tEscT2: 75.0,
@@ -234,7 +224,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
       };
       console.log('😌 MODERATE-RELAXED: High-value transaction without note');
     } else if (transactionAmount > 5000) {
-      // Case 5: High-relaxed for medium-value transactions
       newThresholds = {
         tPass: 200.0,
         tEscT2: 300.5,
@@ -243,7 +232,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
       };
       console.log('🎯 HIGH-RELAXED: Medium-value transaction without note');
     } else if (transactionAmount > 1000) {
-      // Case 6: Ultra-relaxed for regular transactions
       newThresholds = {
         tPass: 500.0,
         tEscT2: 750.0,
@@ -252,7 +240,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
       };
       console.log('🧪 ULTRA-RELAXED: Regular transaction without note');
     } else {
-      // Case 7: Maximum-relaxed for small transactions
       newThresholds = {
         tPass: 1000.0,
         tEscT2: 1500.0,
@@ -263,7 +250,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
     }
   }
 
-  // Update state and storage
   setTPassThreshold(newThresholds.tPass);
   setTEscT2Threshold(newThresholds.tEscT2);
   setAnomalyScoreMultiplier(newThresholds.multiplier);
