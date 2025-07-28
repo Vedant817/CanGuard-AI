@@ -1,4 +1,4 @@
-pip install Flask
+
 # app.py
 
 from flask import Flask, request, jsonify
