@@ -82,7 +82,6 @@ export default function SendMoneyScreen() {
   THRESHOLD_TOGGLE_COUNT: 'THRESHOLD_TOGGLE_COUNT'
 };
 
-// Dynamic threshold states (will be loaded from AsyncStorage)
 const [tPassThreshold, setTPassThreshold] = useState(200.0);
 const [tEscT2Threshold, setTEscT2Threshold] = useState(300.5);
 const [anomalyScoreMultiplier, setAnomalyScoreMultiplier] = useState(1.0);
@@ -122,10 +121,8 @@ const saveAllThresholdsToStorage = async (thresholds) => {
     console.error('❌ Error saving thresholds to AsyncStorage:', error);
   }
 };
-
-
-
-  useEffect(() => {
+  
+useEffect(() => {
     initializeDeviceMetrics();
     startBehavioralMonitoring();
     setMonitoringActive(true);
@@ -142,7 +139,6 @@ const saveAllThresholdsToStorage = async (thresholds) => {
     };
   }, []);
 
-  // Load thresholds from AsyncStorage on component mount
 useEffect(() => {
   const loadStoredThresholds = async () => {
     try {
@@ -188,7 +184,7 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 1.45,
         toggleCount: newToggleCount
       };
-      console.log('🔒 ULTRA-SENSITIVE: High-value transaction with note');
+      // console.log('🔒 ULTRA-SENSITIVE: High-value transaction with note');
     } else if (transactionAmount > 5000) {
       newThresholds = {
         tPass: 0.8,
@@ -196,7 +192,7 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 1.34,
         toggleCount: newToggleCount
       };
-      console.log('🛡️ HIGH-SENSITIVE: Medium-value transaction with note');
+      // console.log('🛡️ HIGH-SENSITIVE: Medium-value transaction with note');
     } else if (transactionAmount > 1000) {
       newThresholds = {
         tPass: 0.8,
@@ -204,7 +200,7 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 0.943,
         toggleCount: newToggleCount
       };
-      console.log('⚖️ MODERATE-SENSITIVE: Regular transaction with note');
+      // console.log('⚖️ MODERATE-SENSITIVE: Regular transaction with note');
     } else {
       newThresholds = {
         tPass: 0.8,
@@ -212,7 +208,7 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 0.897,
         toggleCount: newToggleCount
       };
-      console.log('🤝 MILD-SENSITIVE: Small transaction with note');
+      // console.log('🤝 MILD-SENSITIVE: Small transaction with note');
     }
   } else {
     if (transactionAmount > 10000) {
@@ -222,7 +218,7 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 0.342,
         toggleCount: newToggleCount
       };
-      console.log('😌 MODERATE-RELAXED: High-value transaction without note');
+      // console.log('😌 MODERATE-RELAXED: High-value transaction without note');
     } else if (transactionAmount > 5000) {
       newThresholds = {
         tPass: 200.0,
@@ -230,7 +226,7 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 0.435,
         toggleCount: newToggleCount
       };
-      console.log('🎯 HIGH-RELAXED: Medium-value transaction without note');
+      // console.log('🎯 HIGH-RELAXED: Medium-value transaction without note');
     } else if (transactionAmount > 1000) {
       newThresholds = {
         tPass: 500.0,
@@ -238,7 +234,7 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 0.356,
         toggleCount: newToggleCount
       };
-      console.log('🧪 ULTRA-RELAXED: Regular transaction without note');
+      // console.log('🧪 ULTRA-RELAXED: Regular transaction without note');
     } else {
       newThresholds = {
         tPass: 1000.0,
@@ -246,7 +242,7 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 0.764,
         toggleCount: newToggleCount
       };
-      console.log('🚪 MAXIMUM-RELAXED: Small transaction without note');
+      // console.log('🚪 MAXIMUM-RELAXED: Small transaction without note');
     }
   }
 
@@ -257,9 +253,8 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
 
   await saveAllThresholdsToStorage(newThresholds);
   
-  console.log(`📊 Dynamic thresholds applied: Amount=${transactionAmount}, T_PASS=${newThresholds.tPass}, T_ESC_T2=${newThresholds.tEscT2}, Multiplier=${newThresholds.multiplier}`);
+  // console.log(`📊 Dynamic thresholds applied: Amount=${transactionAmount}, T_PASS=${newThresholds.tPass}, T_ESC_T2=${newThresholds.tEscT2}, Multiplier=${newThresholds.multiplier}`);
 };
-
 
 const customFeatureOrder = [
   'accuracy',
@@ -300,7 +295,6 @@ const mapTypingStatsToReferenceOrder = (typingStats: TypingStats): number[] => {
     Number(typingStats[feature] ?? derived[feature] ?? 0)
   );
 };
-
 
 const loadUserProfile = async () => {
   try {
