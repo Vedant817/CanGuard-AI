@@ -1,24 +1,90 @@
-# CanGuard-AI: Decentralized Blockchain Architecture
+# CanGuard-AI: Blockchain Architecture Documentation
 
-This document outlines a new, decentralized architecture for CanGuard-AI that leverages blockchain principles to enhance user privacy and data security. The goal is to shift from a centralized, bank-owned data model to a user-centric model where the user has full control over their sensitive behavioral data.
+## Executive Summary
 
-## 1. Core Problem with Centralized Storage
+CanGuard-AI implements a **hybrid decentralized blockchain architecture** that fundamentally transforms behavioral biometric data storage and access control. Unlike traditional centralized systems, this architecture ensures **user sovereignty over personal biometric data** while maintaining the security and performance requirements of banking applications.
 
-In a traditional client-server model, the user's behavioral data (typing patterns, location, device info) would be stored on the bank's central servers. This creates significant privacy risks and a single point of failure:
-- **Privacy Concerns**: Users must trust the bank to protect their highly personal data from misuse or breaches.
-- **Security Risk**: A central database becomes a high-value target for attackers.
-- **Lack of Control**: The user has no say in how their data is used, shared, or managed.
-
-## 2. The Decentralized Solution: A Hybrid Approach
-
-To solve this, we will adopt a hybrid architecture that uses a decentralized storage network for the raw data and a blockchain-based identity system for access control and data integrity.
-
-### Core Technologies
-- **Decentralized Identifiers (DIDs)**: A W3C standard for self-sovereign, cryptographic identity. Each user gets a DID that they own and control, acting as a master key for their digital identity and data.
-- **IPFS (InterPlanetary File System)**: A peer-to-peer network for storing and sharing data in a distributed file system. We will use IPFS to store the user's encrypted behavioral data. Files are addressed by a unique content hash (CID), ensuring data integrity.
-- **Ceramic Network**: A decentralized network for managing dynamic, user-controlled data streams. We will use Ceramic to create a verifiable, tamper-proof index of all the user's data CIDs stored on IPFS. It links the data to the user's DID.
+The system leverages **Decentralized Identifiers (DIDs)**, **IPFS distributed storage**, **cryptographic encryption**, and **smart contract-like permission systems** to create a privacy-preserving, tamper-resistant infrastructure for behavioral authentication.
 
 ---
+
+## 1. Core Blockchain Components
+
+### 1.1 Decentralized Identity Layer (DID)
+
+**Implementation**: Custom DID Method (`did:canguard`)
+- **Purpose**: User-controlled cryptographic identity
+- **Generation**: 256-bit entropy using Expo Crypto
+- **Format**: `did:canguard:{32-char-hash}`
+- **Storage**: SecureStore (private keys) + AsyncStorage (metadata)
+
+```typescript
+// DID Generation Process
+const seed = await Crypto.getRandomBytesAsync(32);
+const didSuffix = await Crypto.digestStringAsync(
+  Crypto.CryptoDigestAlgorithm.SHA256, seed, 
+  { encoding: Crypto.CryptoEncoding.HEX }
+);
+const did = `did:canguard:${didSuffix.substring(0, 32)}`;
+```
+
+**Key Features**:
+- Self-sovereign identity ownership
+- No dependency on external DID networks
+- Cryptographically verifiable
+- Cross-platform compatibility (React Native)
+
+### 1.2 Distributed Storage Layer (IPFS)
+
+**Infrastructure**: Pinata Cloud + IPFS Network
+- **Content Addressing**: CID-based immutable references
+- **Redundancy**: Pinned to Pinata for persistence
+- **Access**: HTTP gateway + native IPFS protocols
+- **Encryption**: Client-side AES-256 before upload
+
+```javascript
+// IPFS Storage Workflow
+const dataBlob = {
+  encryptedData: encrypted.encryptedData,
+  nonce: encrypted.nonce,
+  metadata: {
+    timestamp: behavioralData.timestamp,
+    sessionId: behavioralData.sessionId,
+    dataType: 'behavioral'
+  }
+};
+const cid = await uploadToIPFS(JSON.stringify(dataBlob));
+```
+
+**Advantages**:
+- **Immutability**: Content cannot be altered without changing CID
+- **Verifiability**: Hash-based integrity validation
+- **Availability**: Distributed across IPFS network
+- **Cost-Effective**: No blockchain gas fees for data storage
+
+### 1.3 Encryption & Key Management
+
+**Algorithm**: Advanced Encryption Standard (AES-256)
+- **Key Generation**: Cryptographically secure random bytes
+- **Key Storage**: React Native SecureStore (hardware-backed)
+- **Nonce Management**: Unique per encryption operation
+- **Data Flow**: Encrypt → Upload → Store CID → Decrypt on demand
+
+```typescript
+// Encryption Process
+const encryptData = async (data: any): Promise<EncryptionResult> => {
+  const keyPair = await getEncryptionKeys();
+  const dataString = JSON.stringify(data);
+  const { encrypted, nonce } = simpleEncrypt(dataString, keyPair.secretKey);
+  return { encryptedData: encrypted, nonce, success: true };
+};
+```
+
+**Security Properties**:
+- **Forward Secrecy**: New nonces prevent replay attacks
+- **Client-Side Encryption**: Data encrypted before leaving device
+- **Zero-Knowledge**: Backend cannot decrypt without user consent
+- **Hardware Security**: Private keys protected by device TEE
 
 ## 3. New Decentralized Workflow
 
