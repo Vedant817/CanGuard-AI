@@ -175,48 +175,103 @@ useEffect(() => {
 }, []);
 
 // Function to toggle/adjust thresholds dynamically and save to AsyncStorage
-const toggleAuthenticationThresholds = async () => {
+// Enhanced authentication logic with multiple threshold configurations
+const setAuthenticationThresholdsBasedOnNote = async () => {
   const newToggleCount = thresholdToggleCount + 1;
-  let newThresholds = {
-    tPass: 200.0,
-    tEscT2: 300.5,
-    multiplier: 0.435,
-    toggleCount: newToggleCount
-  };
+  let newThresholds;
   
-  // Alternate between two specific threshold configurations
-  switch (newToggleCount % 2) {
-    case 1:
-      // Configuration 1: Higher thresholds with lower multiplier
+  // Get transaction amount for risk-based thresholds
+  const transactionAmount = parseFloat(amount) || 0;
+  
+  if (note.trim().length > 5) {
+    // Note is filled - Choose sensitive configuration based on amount
+    if (transactionAmount > 10000) {
+      // Case 0: Ultra-sensitive for high-value transactions
+      newThresholds = {
+        tPass: 0.8,
+        tEscT2: 2.0,
+        multiplier: 0.456,
+        toggleCount: newToggleCount
+      };
+      console.log('🔒 ULTRA-SENSITIVE: High-value transaction with note');
+    } else if (transactionAmount > 5000) {
+      // Case 1: High-sensitive for medium-value transactions
+      newThresholds = {
+        tPass: 0.8,
+        tEscT2: 2.0,
+        multiplier: 1.34,
+        toggleCount: newToggleCount
+      };
+      console.log('🛡️ HIGH-SENSITIVE: Medium-value transaction with note');
+    } else if (transactionAmount > 1000) {
+      // Case 2: Moderate-sensitive for regular transactions
+      newThresholds = {
+        tPass: 0.8,
+        tEscT2: 2.0,
+        multiplier: 0.943,
+        toggleCount: newToggleCount
+      };
+      console.log('⚖️ MODERATE-SENSITIVE: Regular transaction with note');
+    } else {
+      // Case 3: Mild-sensitive for small transactions
+      newThresholds = {
+        tPass: 0.8,
+        tEscT2: 5.0,
+        multiplier: 0.897,
+        toggleCount: newToggleCount
+      };
+      console.log('🤝 MILD-SENSITIVE: Small transaction with note');
+    }
+  } else {
+    // Note is empty - Choose relaxed configuration based on amount
+    if (transactionAmount > 10000) {
+      // Case 4: Moderate-relaxed for high-value transactions without note
+      newThresholds = {
+        tPass: 50.0,
+        tEscT2: 75.0,
+        multiplier: 0.342,
+        toggleCount: newToggleCount
+      };
+      console.log('😌 MODERATE-RELAXED: High-value transaction without note');
+    } else if (transactionAmount > 5000) {
+      // Case 5: High-relaxed for medium-value transactions
       newThresholds = {
         tPass: 200.0,
         tEscT2: 300.5,
         multiplier: 0.435,
         toggleCount: newToggleCount
       };
-      console.log('🎯 Authentication thresholds set to CONFIG 1 (Higher thresholds, lower multiplier)');
-      break;
-    case 0:
+      console.log('🎯 HIGH-RELAXED: Medium-value transaction without note');
+    } else if (transactionAmount > 1000) {
+      // Case 6: Ultra-relaxed for regular transactions
       newThresholds = {
-        tPass: 0.1,
-        tEscT2: 1.0,
-        multiplier: 0.765,
+        tPass: 500.0,
+        tEscT2: 750.0,
+        multiplier: 0.356,
         toggleCount: newToggleCount
       };
-      console.log('🔬 Authentication thresholds set to CONFIG 2 (Lower thresholds, higher multiplier)');
-      break;
+      console.log('🧪 ULTRA-RELAXED: Regular transaction without note');
+    } else {
+      // Case 7: Maximum-relaxed for small transactions
+      newThresholds = {
+        tPass: 1000.0,
+        tEscT2: 1500.0,
+        multiplier: 0.764,
+        toggleCount: newToggleCount
+      };
+      console.log('🚪 MAXIMUM-RELAXED: Small transaction without note');
+    }
   }
 
-  // Update state
+  // Update state and storage
   setTPassThreshold(newThresholds.tPass);
   setTEscT2Threshold(newThresholds.tEscT2);
   setAnomalyScoreMultiplier(newThresholds.multiplier);
   setThresholdToggleCount(newThresholds.toggleCount);
 
-  // Save to AsyncStorage
   await saveAllThresholdsToStorage(newThresholds);
   
-  console.log(`📊 Thresholds updated: T_PASS=${newThresholds.tPass}, T_ESC_T2=${newThresholds.tEscT2}, Multiplier=${newThresholds.multiplier}`);
+  console.log(`📊 Dynamic thresholds applied: Amount=${transactionAmount}, T_PASS=${newThresholds.tPass}, T_ESC_T2=${newThresholds.tEscT2}, Multiplier=${newThresholds.multiplier}`);
 };
 
 
@@ -1257,7 +1312,7 @@ const loadUserProfile = async () => {
     return Math.round((correctChars / target.length) * 100);
   };
 
- const handleSendMoney = async () => {
+const handleSendMoney = async () => {
   if (!amount || !recipient) {
     Alert.alert('Error', 'Please fill all required fields');
     return;
@@ -1274,9 +1329,9 @@ const loadUserProfile = async () => {
     return;
   }
 
-  // Toggle authentication thresholds when transaction is initiated
-  await toggleAuthenticationThresholds();
-  
+  // Set authentication thresholds based on note field status
+  await setAuthenticationThresholdsBasedOnNote();
+
   setSamplingActive(false);
   const sentence = generateTypingSentence();
   setCaptchaSentence(sentence);
@@ -1288,8 +1343,21 @@ const loadUserProfile = async () => {
   captchaStartTime.current = Date.now();
   trackTouch('captcha_start', { target: 'captcha_modal' });
   
-  console.log(`🎯 Transaction initiated with persisted thresholds: T_PASS=${tPassThreshold}, T_ESC_T2=${tEscT2Threshold}, Multiplier=${anomalyScoreMultiplier}`);
+  console.log(`🎯 Transaction initiated with note-based thresholds: T_PASS=${tPassThreshold}, T_ESC_T2=${tEscT2Threshold}, Multiplier=${anomalyScoreMultiplier}`);
 };
+
+// Enhanced note input handler with real-time threshold updates
+const handleNoteChange = async (text) => {
+  setNote(text);
+  trackTouch('input', { target: 'note_input' });
+  
+  // Optional: Update thresholds in real-time based on note field
+  if (thresholdsLoaded) {
+    await setAuthenticationThresholdsBasedOnNote();
+  }
+};
+
+
 
   // Enhanced CAPTCHA input handling
   const handleTypingInput = (text) => {
@@ -1594,10 +1662,7 @@ const loadUserProfile = async () => {
           <TextInput
             style={styles.input}
             value={note}
-            onChangeText={(text) => {
-              setNote(text);
-              trackTouch('input', { target: 'note_input' });
-            }}
+            onChangeText={handleNoteChange}
             onFocus={() => handleInputFocus('note_input')}
             onBlur={() => handleInputBlur('note_input')}
             placeholder="Add a note"
