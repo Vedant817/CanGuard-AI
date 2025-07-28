@@ -1,9 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { getDID, type SimpleIdentity } from './didService';
-
-// Get API base URL from environment or use default
-const API_BASE_URL = process.env.API_BASE_URL!;
+import API_BASE_URL from '../config/api';
 
 // Comprehensive logging utility for ceramic operations
 const ceramicLog = (message: string, data?: any) => {
@@ -153,8 +151,14 @@ export const createDataStream = async (userId: string): Promise<string | null> =
         return response.data.streamId;
       }
     } catch (apiError) {
+      let errorMessage = 'Unknown error';
+      if (apiError instanceof Error) {
+        errorMessage = apiError.message;
+      } else if (typeof apiError === 'object' && apiError !== null && 'message' in apiError) {
+        errorMessage = (apiError as any).message;
+      }
       ceramicLog('⚠️ Backend API unavailable, using local storage fallback', {
-        error: apiError.message
+        error: errorMessage
       });
     }
 
@@ -237,8 +241,14 @@ export const addCID = async (
         return true;
       }
     } catch (apiError) {
+      let errorMessage = 'Unknown error';
+      if (apiError instanceof Error) {
+        errorMessage = apiError.message;
+      } else if (typeof apiError === 'object' && apiError !== null && 'message' in apiError) {
+        errorMessage = String((apiError as any).message);
+      }
       ceramicLog('⚠️ Backend API unavailable, using local storage fallback', {
-        error: apiError.message
+        error: errorMessage
       });
     }
 
@@ -329,9 +339,17 @@ export const getCIDs = async (streamId: string): Promise<DataStreamEntry[]> => {
         });
         return entries;
       }
-    } catch (apiError) {
+    } catch (apiError: any) {
+      let errorMessage = 'Unknown error';
+      if (apiError && typeof apiError === 'object') {
+        if ('message' in apiError && typeof apiError.message === 'string') {
+          errorMessage = apiError.message;
+        } else if ('toString' in apiError && typeof apiError.toString === 'function') {
+          errorMessage = apiError.toString();
+        }
+      }
       ceramicLog('⚠️ Backend API unavailable, using local storage fallback', {
-        error: apiError.message
+        error: errorMessage
       });
     }
 

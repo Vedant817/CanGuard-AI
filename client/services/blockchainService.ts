@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { generateDID, getDID } from './didService';
 import { encryptData, decryptData, initializeUserEncryption, verifyEncryption } from './encryptionService';
 import { uploadToIPFS, getFromIPFS } from './ipfsService';
-import { createDataStream, addCID, getRecentCIDs, getCIDs } from './ceramicService';
+// Removed ceramic service dependency
 import { getDID as getUserDID } from './didService';
 
 // Comprehensive logging utility for blockchain operations
@@ -86,12 +86,21 @@ export const initializeBlockchainForUser = async (userId: string): Promise<Block
     }
     blockchainLog('✅ Encryption verification completed successfully');
 
-    blockchainLog('Step 4/5: Creating Ceramic data stream...');
-    const streamId = await createDataStream(userId);
-    if (!streamId) {
-      throw new Error('Failed to create Ceramic data stream');
-    }
-    blockchainLog('✅ Ceramic data stream created', { streamId });
+    blockchainLog('Step 4/5: Creating user data storage...');
+    const streamId = `user_${userId}_${Date.now()}`;
+    
+    // Store user stream metadata directly in AsyncStorage
+    const streamData = {
+      streamId,
+      userId,
+      did: did.did,
+      entries: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    
+    await AsyncStorage.setItem(`stream_${streamId}`, JSON.stringify(streamData));
+    blockchainLog('✅ User data storage created', { streamId });
 
     blockchainLog('Step 5/5: Storing blockchain metadata...');
     const blockchainMetadata = {
@@ -200,17 +209,17 @@ export const storeDataOnChain = async (behavioralData: BehavioralData): Promise<
       pinnedToPinata: true
     });
 
-    blockchainLog('Step 5/5: Storing CID in Ceramic stream...');
-    const stored = await addCID(streamId, cid, 'behavioral', {
+    blockchainLog('Step 5/5: Storing CID in local stream...');
+    const stored = await addCIDToLocal(streamId, cid, 'behavioral', {
       sessionId: behavioralData.sessionId,
       dataSize: dataBlobSize,
       pinned: true
     });
 
     if (!stored) {
-      throw new Error('Failed to store CID in Ceramic stream');
+      throw new Error('Failed to store CID in local stream');
     }
-    blockchainLog('✅ CID stored in Ceramic stream successfully');
+    blockchainLog('✅ CID stored in local stream successfully');
 
     const endTime = Date.now();
     blockchainLog('🎉 Data stored on blockchain successfully!', {
@@ -279,7 +288,7 @@ export const requestDataPermission = async (request: PermissionRequest): Promise
     });
 
     blockchainLog('Step 2/4: Fetching recent CIDs from stream...');
-    const recentCIDs = await getRecentCIDs(streamId, request.timeRange);
+    const recentCIDs = await getRecentCIDsLocal(streamId, request.timeRange);
     blockchainLog('✅ Recent CIDs retrieved', {
       cidsCount: recentCIDs.length,
       timeRangeMinutes: request.timeRange
@@ -527,7 +536,7 @@ export const getBlockchainStatus = async (): Promise<BlockchainResult> => {
     });
 
     blockchainLog('Step 4/5: Retrieving stream entries...');
-    const streamEntries = await getCIDs(metadata.streamId);
+    const streamEntries = await getCIDsLocal(metadata.streamId);
     blockchainLog('✅ Stream entries retrieved', {
       entriesCount: streamEntries.length
     });
@@ -666,6 +675,58 @@ export const cleanupBlockchainData = async (): Promise<BlockchainResult> => {
       message: 'Failed to cleanup blockchain data',
       error: errorMessage
     };
+  }
+};
+
+// Local storage helper functions to replace ceramic dependencies
+const addCIDToLocal = async (streamId: string, cid: string, dataType: string, metadata?: any): Promise<boolean> => {
+  try {
+    const streamDataStr = await AsyncStorage.getItem(`stream_${streamId}`);
+    if (!streamDataStr) {
+      return false;
+    }
+
+    const streamData = JSON.parse(streamDataStr);
+    const newEntry = {
+      cid,
+      timestamp: Date.now(),
+      dataType,
+      metadata
+    };
+
+    streamData.entries.push(newEntry);
+    streamData.updatedAt = Date.now();
+
+    await AsyncStorage.setItem(`stream_${streamId}`, JSON.stringify(streamData));
+    return true;
+  } catch (error) {
+    console.error('Failed to add CID to local storage:', error);
+    return false;
+  }
+};
+
+const getCIDsLocal = async (streamId: string): Promise<any[]> => {
+  try {
+    const streamDataStr = await AsyncStorage.getItem(`stream_${streamId}`);
+    if (!streamDataStr) {
+      return [];
+    }
+    const streamData = JSON.parse(streamDataStr);
+    return streamData.entries || [];
+  } catch (error) {
+    console.error('Failed to get CIDs from local storage:', error);
+    return [];
+  }
+};
+
+const getRecentCIDsLocal = async (streamId: string, minutesBack: number = 2): Promise<any[]> => {
+  try {
+    const allEntries = await getCIDsLocal(streamId);
+    const cutoffTime = Date.now() - (minutesBack * 60 * 1000);
+    return allEntries.filter(entry => entry.timestamp >= cutoffTime);
+  } catch (error) {
+    console.error('Failed to get recent CIDs from local storage:', error);
+    return [];
   }
 };
 

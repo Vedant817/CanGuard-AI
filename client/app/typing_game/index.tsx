@@ -23,6 +23,7 @@ import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import API_BASE_URL from '@/config/api';
 import blockchainService from '@/services/blockchainService';
+import { viewAllStoredData, viewBlockchainMetadata, viewUserStreams, viewPermissionRequests } from '@/utils/debugStorage';
 
 const { width } = Dimensions.get('window');
 
@@ -323,11 +324,13 @@ export default function TypingGameScreen() {
             // Try to decode user ID from token (simplified)
             const tokenPayload = token.split('.')[1];
             if (tokenPayload) {
-              const decoded = JSON.parse(atob(tokenPayload));
-              userId = decoded.userId || decoded.id || 'typing_screen_user';
+              // Use Buffer.from for React Native compatibility instead of atob
+              const decoded = JSON.parse(Buffer.from(tokenPayload, 'base64').toString('utf8'));
+              userId = decoded.userId || decoded.id || decoded.sub || 'typing_screen_user';
+              console.log('✅ Decoded userId from token:', userId);
             }
           } catch (e) {
-            console.log('⚠️ Could not decode user ID from token, using fallback');
+            console.log('⚠️ Could not decode user ID from token, using fallback:', e.message);
           }
         }
         
@@ -927,6 +930,25 @@ const saveBehavioralDataWithVectors = async (typingStats: TypingStats) => {
             </View>
 
             <View style={styles.infoSection}><Text style={styles.infoText}>Your typing patterns and device metrics have been analyzed using advanced behavioral biometrics. The system collected data every 6 seconds and calculated statistical profiles for enhanced security.</Text></View>
+            
+            {/* Debug Section */}
+            <View style={styles.debugSection}>
+              <Text style={styles.debugTitle}>🔍 Debug Data (Development Only)</Text>
+              <View style={styles.debugButtons}>
+                <TouchableOpacity style={styles.debugButton} onPress={viewAllStoredData}>
+                  <Text style={styles.debugButtonText}>View All Data</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.debugButton} onPress={viewBlockchainMetadata}>
+                  <Text style={styles.debugButtonText}>Blockchain Meta</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.debugButton} onPress={viewUserStreams}>
+                  <Text style={styles.debugButtonText}>User Streams</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.debugButton} onPress={viewPermissionRequests}>
+                  <Text style={styles.debugButtonText}>Permissions</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -983,5 +1005,10 @@ const styles = StyleSheet.create({
   deviceInfoGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   deviceInfoItem: { width: '48%', marginBottom: 16, padding: 12, backgroundColor: '#F7FAFC', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' },
   deviceInfoLabel: { fontSize: 12, color: '#718096', marginBottom: 4, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  deviceInfoValue: { fontSize: 14, fontWeight: '600', color: '#2D3748', letterSpacing: 0.3 }
+  deviceInfoValue: { fontSize: 14, fontWeight: '600', color: '#2D3748', letterSpacing: 0.3 },
+  debugSection: { backgroundColor: '#FFF8E1', borderRadius: 12, padding: 16, marginTop: 20, borderWidth: 1, borderColor: '#FFB74D' },
+  debugTitle: { fontSize: 14, fontWeight: '700', color: '#E65100', textAlign: 'center', marginBottom: 12 },
+  debugButtons: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  debugButton: { backgroundColor: '#FF9800', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginBottom: 8, width: '48%' },
+  debugButtonText: { color: '#fff', fontSize: 12, fontWeight: '600', textAlign: 'center' }
 });
