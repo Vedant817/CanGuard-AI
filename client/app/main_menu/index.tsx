@@ -7,14 +7,13 @@ import {
   ScrollView,
   SafeAreaView,
   StatusBar,
+  Alert
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { getToken,clearToken } from '@/utils/token';
 import {getUserProfile} from '@/app/api/user';
-// import { runBlockchainTests } from '@/__tests__/blockchainTest';
-import { Alert } from 'react-native';
 
 
 
