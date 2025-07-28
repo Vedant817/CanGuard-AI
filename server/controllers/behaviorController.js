@@ -3,6 +3,7 @@ const User = require('../models/User');
 
 // Import blockchain services
 const { analyzeUserDataSecurely, storeAnalysisResult } = require('../services/blockchainService');
+const DistributedStorageService = require('../services/distributedStorageService');
 
 // Blockchain logging utility
 const blockchainLog = (message, data = {}) => {
