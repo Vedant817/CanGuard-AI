@@ -79,7 +79,11 @@ const behavioralSchema = new mongoose.Schema({
       bufferSize: { type: Number, default: 5 },
       sessionId: { type: String, default: '' },
       lastCalculationTime: { type: Date, default: Date.now }
-    }
+    },
+    
+    // IPFS Storage Fields
+    ipfsCID: { type: String, default: null },
+    ipfsGatewayUrl: { type: String, default: null }
   },
   
   last_locations: [

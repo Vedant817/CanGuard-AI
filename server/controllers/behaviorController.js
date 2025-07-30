@@ -3,6 +3,7 @@ const User = require('../models/User');
 
 // Import blockchain services
 const { analyzeUserDataSecurely, storeAnalysisResult } = require('../services/blockchainService');
+const storageService = require('../services/distributedStorageService');
 
 // Blockchain logging utility
 const blockchainLog = (message, data = {}) => {
@@ -74,6 +75,53 @@ exports.saveTypingDataWithVectors = async (req, res) => {
     await newBehavior.save();
     const savedBehavior = await Behavioral.findById(newBehavior._id);
 
+    // 🌐 STEP 2: Store behavioral data on IPFS via Pinata
+    console.log('🌐 Storing behavioral data on IPFS...');
+    
+    // Prepare data for IPFS storage with proper metadata
+    const ipfsData = {
+      behavioralFingerprint: {
+        userId: userId,
+        fingerprintId: newBehavior._id.toString(),
+        typingStats: typingStats,
+        deviceMetrics: deviceMetrics,
+        vectorStandardDeviations: stdWithFallback,
+        vectorMetadata: vectorMetadata,
+        timestamp: sessionData.timestamp || new Date().toISOString()
+      },
+      metadata: {
+        platform: 'CanGuard-AI',
+        dataType: 'behavioral-biometric',
+        userId: userId,
+        sessionType: 'typing-test',
+        vectorCount: vectorMetadata?.vectorCount || 0,
+        analysisLevel: 'enhanced'
+      }
+    };
+
+    const filename = `behavioral-data-${userId}-${Date.now()}.json`;
+    const ipfsResult = await storageService.storeOnIPFS(ipfsData, filename);
+    
+    let ipfsCID = null;
+    let ipfsGatewayUrl = null;
+    
+    if (ipfsResult.success) {
+      ipfsCID = ipfsResult.cid;
+      ipfsGatewayUrl = ipfsResult.gatewayUrl;
+      console.log('✅ Behavioral data stored on IPFS successfully!');
+      console.log('📦 IPFS CID:', ipfsCID);
+      console.log('🔗 Gateway URL:', ipfsGatewayUrl);
+      
+      // Update MongoDB record with IPFS CID
+      await Behavioral.findByIdAndUpdate(newBehavior._id, {
+        'fingerprint.ipfsCID': ipfsCID,
+        'fingerprint.ipfsGatewayUrl': ipfsGatewayUrl
+      });
+    } else {
+      console.warn('⚠️ Failed to store behavioral data on IPFS:', ipfsResult.error);
+      // Continue without IPFS storage - don't fail the entire request
+    }
+
     await User.findByIdAndUpdate(userId, {
       lastBehavioralVerification: new Date()
     });
@@ -90,7 +138,16 @@ exports.saveTypingDataWithVectors = async (req, res) => {
           standardDeviationMetrics: stdWithFallback,
           vectorCount: vectorMetadata?.vectorCount || 0
         },
-        savedDStd: savedBehavior.fingerprint.D_std
+        savedDStd: savedBehavior.fingerprint.D_std,
+        ipfsStorage: ipfsResult.success ? {
+          cid: ipfsCID,
+          gatewayUrl: ipfsGatewayUrl,
+          status: 'stored',
+          filename: filename
+        } : {
+          status: 'failed',
+          error: ipfsResult.error || 'Unknown error'
+        }
       }
     });
 

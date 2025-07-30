@@ -1,6 +1,10 @@
 const { create } = require('ipfs-http-client');
 const axios = require('axios');
 const crypto = require('crypto');
+const FormData = require('form-data');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 // Logging utility
 const storageLog = (message, data = {}) => {
@@ -104,16 +108,26 @@ class DistributedStorageService {
         filename 
       });
 
+      // Create a temporary file for the JSON data
+      const tempFilePath = path.join(os.tmpdir(), filename || `data-${Date.now()}.json`);
+      const jsonContent = JSON.stringify(data, null, 2);
+      fs.writeFileSync(tempFilePath, jsonContent);
+      
       const formData = new FormData();
-      const jsonBlob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+      formData.append('file', fs.createReadStream(tempFilePath), {
+        filename: filename || `data-${Date.now()}.json`,
+        contentType: 'application/json'
+      });
       
-      formData.append('file', jsonBlob, filename || `data-${Date.now()}.json`);
-      
+      // Enhanced metadata for better dashboard visibility
       const metadata = {
         name: filename || `CanGuard-Data-${Date.now()}`,
         keyvalues: {
           platform: 'CanGuard-AI',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          dataType: data.metadata?.dataType || 'unknown',
+          userId: data.metadata?.userId || 'unknown',
+          sessionType: data.metadata?.sessionType || 'unknown'
         }
       };
       
@@ -121,11 +135,18 @@ class DistributedStorageService {
 
       const response = await axios.post('https://api.pinata.cloud/pinning/pinFileToIPFS', formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          ...formData.getHeaders(),
           'Authorization': `Bearer ${this.pinataJWT}`
         },
         timeout: 30000
       });
+
+      // Clean up temporary file
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
 
       if (response.status === 200 && response.data.IpfsHash) {
         storageLog('Data stored on IPFS successfully', {

@@ -94,6 +94,8 @@ class PinataDataViewer {
         const metadata = file.metadata?.keyvalues || {};
         const name = file.metadata?.name || '';
         return metadata.platform === 'CanGuard-AI' || 
+               metadata.dataType === 'behavioral-biometric' ||
+               name.includes('behavioral-data') ||
                name.includes('behavioral') || 
                name.includes('identity') ||
                name.includes('CanGuard');
