@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
   SafeAreaView,
   Alert,
   Modal,
@@ -21,6 +20,8 @@ import * as Network from 'expo-network';
 import * as Location from 'expo-location';
 import { v4 as uuidv4 } from 'uuid';
 import API_BASE_URL from '@/config/api';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+
 
 export default function SendMoneyScreen() {
   const [amount, setAmount] = useState('');
@@ -174,96 +175,81 @@ useEffect(() => {
   loadStoredThresholds();
 }, []);
 
-// Function to toggle/adjust thresholds dynamically and save to AsyncStorage
-// Enhanced authentication logic with multiple threshold configurations
 const setAuthenticationThresholdsBasedOnNote = async () => {
   const newToggleCount = thresholdToggleCount + 1;
   let newThresholds;
   
-  // Get transaction amount for risk-based thresholds
   const transactionAmount = parseFloat(amount) || 0;
   
-  if (note.trim().length > 5) {
-    // Note is filled - Choose sensitive configuration based on amount
+  if (note.trim().length > 6) {
     if (transactionAmount > 10000) {
-      // Case 0: Ultra-sensitive for high-value transactions
       newThresholds = {
         tPass: 0.8,
         tEscT2: 2.0,
-        multiplier: 0.456,
+        multiplier: 1.4,
         toggleCount: newToggleCount
       };
-      console.log('🔒 ULTRA-SENSITIVE: High-value transaction with note');
+      // console.log('🔒 ULTRA-SENSITIVE: High-value transaction with note');
     } else if (transactionAmount > 5000) {
-      // Case 1: High-sensitive for medium-value transactions
       newThresholds = {
         tPass: 0.8,
         tEscT2: 2.0,
         multiplier: 1.34,
         toggleCount: newToggleCount
       };
-      console.log('🛡️ HIGH-SENSITIVE: Medium-value transaction with note');
+      // console.log('🛡️ HIGH-SENSITIVE: Medium-value transaction with note');
     } else if (transactionAmount > 1000) {
-      // Case 2: Moderate-sensitive for regular transactions
       newThresholds = {
         tPass: 0.8,
         tEscT2: 2.0,
         multiplier: 0.943,
         toggleCount: newToggleCount
       };
-      console.log('⚖️ MODERATE-SENSITIVE: Regular transaction with note');
+      // console.log('⚖️ MODERATE-SENSITIVE: Regular transaction with note');
     } else {
-      // Case 3: Mild-sensitive for small transactions
       newThresholds = {
         tPass: 0.8,
         tEscT2: 5.0,
         multiplier: 0.897,
         toggleCount: newToggleCount
       };
-      console.log('🤝 MILD-SENSITIVE: Small transaction with note');
+      // console.log('🤝 MILD-SENSITIVE: Small transaction with note');
     }
   } else {
-    // Note is empty - Choose relaxed configuration based on amount
     if (transactionAmount > 10000) {
-      // Case 4: Moderate-relaxed for high-value transactions without note
       newThresholds = {
         tPass: 50.0,
         tEscT2: 75.0,
         multiplier: 0.342,
         toggleCount: newToggleCount
       };
-      console.log('😌 MODERATE-RELAXED: High-value transaction without note');
+      // console.log('😌 MODERATE-RELAXED: High-value transaction without note');
     } else if (transactionAmount > 5000) {
-      // Case 5: High-relaxed for medium-value transactions
       newThresholds = {
         tPass: 200.0,
         tEscT2: 300.5,
         multiplier: 0.435,
         toggleCount: newToggleCount
       };
-      console.log('🎯 HIGH-RELAXED: Medium-value transaction without note');
+      // console.log('🎯 HIGH-RELAXED: Medium-value transaction without note');
     } else if (transactionAmount > 1000) {
-      // Case 6: Ultra-relaxed for regular transactions
       newThresholds = {
         tPass: 500.0,
         tEscT2: 750.0,
         multiplier: 0.356,
         toggleCount: newToggleCount
       };
-      console.log('🧪 ULTRA-RELAXED: Regular transaction without note');
+      // console.log('🧪 ULTRA-RELAXED: Regular transaction without note');
     } else {
-      // Case 7: Maximum-relaxed for small transactions
       newThresholds = {
         tPass: 1000.0,
         tEscT2: 1500.0,
         multiplier: 0.764,
         toggleCount: newToggleCount
       };
-      console.log('🚪 MAXIMUM-RELAXED: Small transaction without note');
+      // console.log('🚪 MAXIMUM-RELAXED: Small transaction without note');
     }
   }
-
-  // Update state and storage
   setTPassThreshold(newThresholds.tPass);
   setTEscT2Threshold(newThresholds.tEscT2);
   setAnomalyScoreMultiplier(newThresholds.multiplier);
@@ -271,7 +257,7 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
 
   await saveAllThresholdsToStorage(newThresholds);
   
-  console.log(`📊 Dynamic thresholds applied: Amount=${transactionAmount}, T_PASS=${newThresholds.tPass}, T_ESC_T2=${newThresholds.tEscT2}, Multiplier=${newThresholds.multiplier}`);
+  // console.log(`📊 Dynamic thresholds applied: Amount=${transactionAmount}, T_PASS=${newThresholds.tPass}, T_ESC_T2=${newThresholds.tEscT2}, Multiplier=${newThresholds.multiplier}`);
 };
 
 
@@ -284,8 +270,8 @@ const customFeatureOrder = [
   'errorRate',
   'totalTime',
   'totalWords',
-  'chars_per_min',     // derived from wpm × 5
-  'words_per_min'      // same as wpm
+  'chars_per_min',     
+  'words_per_min'      
 ];
 
 interface TypingStats {
@@ -1554,7 +1540,7 @@ const handleNoteChange = async (text) => {
         <View style={{ width: 24 }} />
       </LinearGradient>
 
-      <ScrollView
+      <KeyboardAwareScrollView
         style={styles.content}
         onScroll={() => trackTouch('scroll', { target: 'main_scroll' })}
         scrollEventThrottle={1000}
@@ -1707,7 +1693,7 @@ const handleNoteChange = async (text) => {
             )}
           </View>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Enhanced Scrollable Typing CAPTCHA Verification Modal */}
       <Modal
@@ -1726,8 +1712,8 @@ const handleNoteChange = async (text) => {
         >
           <View style={styles.modalContainer}>
             <View style={styles.modalBox}>
-              <ScrollView 
-                style={styles.modalScrollView}
+              <KeyboardAwareScrollView 
+                style={styles.modalKeyboardAwareScrollView}
                 onScroll={() => trackTouch('scroll', { target: 'captcha_scroll' })}
               >
                 <View style={styles.modalScrollContent}>
@@ -1911,7 +1897,7 @@ const handleNoteChange = async (text) => {
                   {/* Extra space for keyboard */}
                   <View style={styles.keyboardSpace} />
                 </View>
-              </ScrollView>
+              </KeyboardAwareScrollView>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -2051,7 +2037,7 @@ const styles = StyleSheet.create({
     maxHeight: '90%',
     minHeight: '60%',
   },
-  modalScrollView: {
+  modalKeyboardAwareScrollView: {
     flex: 1,
   },
   modalScrollContent: {
