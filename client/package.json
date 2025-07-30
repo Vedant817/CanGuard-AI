@@ -21,6 +21,7 @@
     "expo": "53.0.19",
     "expo-blur": "~14.1.5",
     "expo-constants": "~17.1.7",
+    "expo-crypto": "~14.1.5",
     "expo-device": "~7.1.4",
     "expo-font": "~13.3.2",
     "expo-haptics": "~14.1.4",
@@ -43,12 +44,14 @@
     "react-native-device-info": "^14.0.4",
     "react-native-gesture-handler": "~2.24.0",
     "react-native-get-random-values": "^1.11.0",
+    "react-native-keychain": "^8.2.0",
     "react-native-reanimated": "~3.17.4",
     "react-native-safe-area-context": "5.4.0",
     "react-native-screens": "~4.11.1",
     "react-native-web": "~0.20.0",
     "react-native-webview": "13.13.5",
     "rxjs": "^7.8.2",
+    "socket.io-client": "^4.7.2",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
