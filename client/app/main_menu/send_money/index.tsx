@@ -244,7 +244,7 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
       newThresholds = {
         tPass: 1000.0,
         tEscT2: 1500.0,
-        multiplier: 0.764,
+        multiplier: 0.564,
         toggleCount: newToggleCount
       };
       // console.log('🚪 MAXIMUM-RELAXED: Small transaction without note');
