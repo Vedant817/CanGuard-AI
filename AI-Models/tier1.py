@@ -4,10 +4,7 @@ from sklearn.preprocessing import StandardScaler
 from math import radians, sin, cos, sqrt, atan2
 
 class Tier1Authenticator:
-    """
-    A class to handle Tier 1 behavior-based authentication.
-    It requires an enrollment phase to create a personalized user profile.
-    """
+
     def __init__(self, age, alpha_mean=0.05, alpha_std=0.02):
         self.age = age
         self.alpha_mean = alpha_mean
@@ -33,8 +30,6 @@ class Tier1Authenticator:
         self.D_std = np.std(enrollment_data, axis=0)
         self.D_std = np.maximum(self.D_std, 1e-2)
         self.is_enrolled = True
-        # This part is just for console output in the main class
-        # print("✅ Enrollment Complete! Personalized profile created.")
 
     def _compute_anomaly_score(self, v):
         if np.count_nonzero(v) < 4:

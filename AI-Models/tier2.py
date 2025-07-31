@@ -11,7 +11,6 @@ FEATURE_NAMES = [
 ]
 
 def create_base_profile():
-    """Generates a unique base behavioral profile for a single user."""
     return np.array([
         random.uniform(85, 98),       # accuracy (%)
         random.uniform(250, 450),     # flight_time (ms)
@@ -26,7 +25,6 @@ def create_base_profile():
     ])
 
 def generate_sample_for_user(base_profile):
-    """Creates a single behavioral sample with realistic noise."""
     # Jitter represents the typical standard deviation for each feature
     jitter_std = np.array([
         2.5, 15.0, 1.5, 20.0, 5.0, 
@@ -38,7 +36,7 @@ def generate_sample_for_user(base_profile):
     return np.maximum(sample, 0)
 
 def create_context_vector(v_ref, v_test, age, is_impostor):
-    """Creates a plausible context vector for a given pair."""
+  
     # Simulate a T1 anomaly score - it should be higher for impostors
     distance = np.linalg.norm(v_ref - v_test) / np.linalg.norm(v_ref)
     if is_impostor:
@@ -54,7 +52,7 @@ def create_context_vector(v_ref, v_test, age, is_impostor):
         float(random.choice([0, 1])) if age > 70 else 0.0 # disability_flag
     ])
 
-# --- 1. Generate Raw User Data ---
+#Raw User Data
 print("Step 1: Generating raw user profiles and samples...")
 all_user_data = {}
 all_user_ages = {}
@@ -64,7 +62,7 @@ for user_id in range(NUM_USERS):
     all_user_ages[user_id] = random.randint(18, 80)
 print(f"Generated data for {NUM_USERS} users with {SAMPLES_PER_USER} samples each.")
 
-# --- 2. Create Training Pairs ---
+# Created Training Pairs
 print("\nStep 2: Creating positive and negative training pairs...")
 dataset = []
 user_ids = list(all_user_data.keys())
@@ -90,14 +88,14 @@ for user_id in user_ids:
 random.shuffle(dataset)
 print(f"Created a balanced dataset with {len(dataset)} pairs.")
 
-# --- 3. Normalize the Behavioral Data ---
+# Normalize
 print("\nStep 3: Normalizing behavioral data...")
 # Extract all behavior vectors for fitting the scaler
 all_vectors = [pair[0] for pair in dataset] + [pair[1] for pair in dataset]
 scaler = StandardScaler()
 scaler.fit(all_vectors)
 
-# Apply the scaler to the dataset
+# Apply the scaler
 normalized_dataset = []
 for v_ref, v_test, context, label in dataset:
     v_ref_norm = scaler.transform(v_ref.reshape(1, -1)).flatten()
@@ -106,7 +104,7 @@ for v_ref, v_test, context, label in dataset:
 
 print("Normalization complete. The dataset is ready for training.")
 
-# --- 4. Display Sample Data ---
+
 print("\n--- Sample of Final Dataset (Normalized) ---")
 for i in range(3):
     v_ref, v_test, context, label = normalized_dataset[i]
@@ -116,8 +114,7 @@ for i in range(3):
     print(f"  v_test (norm): {np.round(v_test, 2)}")
     print(f"  Context: {np.round(context, 2)}")
 
-# The 'normalized_dataset' is now ready to be converted to PyTorch Tensors
-# and fed into your UnifiedSiameseVerifier model for training.
+
 
 
 import torch
@@ -189,11 +186,11 @@ class BehaviorDataset(Dataset):
         self.data = data
 
     def __len__(self):
-        # Returns the total number of pairs in the dataset
+        
         return len(self.data)
 
     def __getitem__(self, idx):
-        # Retrieves one pair of data by index and converts it to Tensors
+        
         v_ref, v_test, context, label = self.data[idx]
         
         return (
@@ -204,24 +201,18 @@ class BehaviorDataset(Dataset):
         )
     
 
-# Assume 'normalized_dataset' is the list generated from the previous script
-
-# Instantiate the Dataset
 train_dataset = BehaviorDataset(normalized_dataset)
 
-# Create the DataLoader
 BATCH_SIZE = 64
 train_loader = DataLoader(
     dataset=train_dataset,
     batch_size=BATCH_SIZE,
-    shuffle=True  # Shuffle data every epoch for better training
+    shuffle=True 
 )
 
 
-# --- Full Training Script ---
-# (Place this after the code from steps 1 and 2)
+# Full Training Script
 
-# Model, optimizer, and loss function (as you defined)
 model = UnifiedSiameseVerifier()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 loss_fn = nn.BCELoss()
@@ -237,23 +228,18 @@ model.train()
 for epoch in range(NUM_EPOCHS):
     total_loss = 0.0
     
-    # The DataLoader provides batches of data automatically
     for i, (v_ref_batch, v_test_batch, context_batch, label_batch) in enumerate(train_loader):
         
-        # 1. Zero the gradients
+   
         optimizer.zero_grad()
         
-        # 2. Forward pass: compute predicted y by passing inputs to the model
         predictions = model(v_ref_batch, v_test_batch, context_batch)
         
-        # 3. Compute loss
-        # We unsqueeze the label_batch to match the prediction's shape ([BATCH_SIZE, 1])
+
         loss = loss_fn(predictions, label_batch.unsqueeze(1))
         
-        # 4. Backward pass: compute gradient of the loss with respect to model parameters
         loss.backward()
-        
-        # 5. Call step(): Causes the optimizer to take a step that updates the model's parameters
+
         optimizer.step()
         
         total_loss += loss.item()
@@ -264,15 +250,12 @@ for epoch in range(NUM_EPOCHS):
 print("\n--- Training Complete --- ✅")
 
 
-# Define the file path for the saved model
 MODEL_SAVE_PATH = '/kaggle/working/t2_unified_verifier.pth'
 
-# Save the model's state dictionary
 torch.save(model.state_dict(), MODEL_SAVE_PATH)
 
 print(f"\n✅ T2 model saved to '{MODEL_SAVE_PATH}'")
 
-# It's also critical to save the scaler used for normalization
 import joblib
 SCALER_SAVE_PATH = '/kaggle/working/t2_scaler.joblib'
 joblib.dump(scaler, SCALER_SAVE_PATH)

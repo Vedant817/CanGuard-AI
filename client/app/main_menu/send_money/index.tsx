@@ -143,7 +143,6 @@ const saveAllThresholdsToStorage = async (thresholds) => {
     };
   }, []);
 
-  // Load thresholds from AsyncStorage on component mount
 useEffect(() => {
   const loadStoredThresholds = async () => {
     try {
@@ -168,7 +167,7 @@ useEffect(() => {
       });
     } catch (error) {
       console.error('❌ Error loading thresholds from AsyncStorage:', error);
-      setThresholdsLoaded(true); // Still set to true to prevent infinite loading
+      setThresholdsLoaded(true); 
     }
   };
 
@@ -189,7 +188,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 1.4,
         toggleCount: newToggleCount
       };
-      // console.log('🔒 ULTRA-SENSITIVE: High-value transaction with note');
     } else if (transactionAmount > 5000) {
       newThresholds = {
         tPass: 0.8,
@@ -197,7 +195,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 1.34,
         toggleCount: newToggleCount
       };
-      // console.log('🛡️ HIGH-SENSITIVE: Medium-value transaction with note');
     } else if (transactionAmount > 1000) {
       newThresholds = {
         tPass: 0.8,
@@ -205,7 +202,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 0.943,
         toggleCount: newToggleCount
       };
-      // console.log('⚖️ MODERATE-SENSITIVE: Regular transaction with note');
     } else {
       newThresholds = {
         tPass: 0.8,
@@ -213,7 +209,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 0.897,
         toggleCount: newToggleCount
       };
-      // console.log('🤝 MILD-SENSITIVE: Small transaction with note');
     }
   } else {
     if (transactionAmount > 10000) {
@@ -223,7 +218,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 0.342,
         toggleCount: newToggleCount
       };
-      // console.log('😌 MODERATE-RELAXED: High-value transaction without note');
     } else if (transactionAmount > 5000) {
       newThresholds = {
         tPass: 200.0,
@@ -231,7 +225,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 0.435,
         toggleCount: newToggleCount
       };
-      // console.log('🎯 HIGH-RELAXED: Medium-value transaction without note');
     } else if (transactionAmount > 1000) {
       newThresholds = {
         tPass: 500.0,
@@ -239,7 +232,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 0.356,
         toggleCount: newToggleCount
       };
-      // console.log('🧪 ULTRA-RELAXED: Regular transaction without note');
     } else {
       newThresholds = {
         tPass: 1000.0,
@@ -247,7 +239,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
         multiplier: 0.564,
         toggleCount: newToggleCount
       };
-      // console.log('🚪 MAXIMUM-RELAXED: Small transaction without note');
     }
   }
   setTPassThreshold(newThresholds.tPass);
@@ -256,8 +247,6 @@ const setAuthenticationThresholdsBasedOnNote = async () => {
   setThresholdToggleCount(newThresholds.toggleCount);
 
   await saveAllThresholdsToStorage(newThresholds);
-  
-  // console.log(`📊 Dynamic thresholds applied: Amount=${transactionAmount}, T_PASS=${newThresholds.tPass}, T_ESC_T2=${newThresholds.tEscT2}, Multiplier=${newThresholds.multiplier}`);
 };
 
 
