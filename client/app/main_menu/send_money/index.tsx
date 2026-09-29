@@ -1,17 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
-  Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   Alert,
-  Modal,
   Platform,
-  KeyboardAvoidingView,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,9 +15,24 @@ import * as Location from 'expo-location';
 import { v4 as uuidv4 } from 'uuid';
 import API_BASE_URL from '@/config/api';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { useTheme } from '@/theme';
+import {
+  Text,
+  Field,
+  Button,
+  Card,
+  Section,
+  Badge,
+  Sheet,
+  Banner,
+  AppHeader,
+  Screen,
+  SegmentedControl,
+} from '@/components/ui';
 
 
 export default function SendMoneyScreen() {
+  const { colors, spacing, radius, fontSize, fontWeight, lineHeight, monoFont } = useTheme();
   const [amount, setAmount] = useState('');
   const [recipient, setRecipient] = useState('');
   const [upiId, setUpiId] = useState('');
@@ -1477,44 +1486,49 @@ const handleNoteChange = async (text) => {
 
   // Get color based on typing accuracy
   const getAccuracyColor = () => {
-    if (typingAccuracy >= 95) return '#4CAF50';
-    if (typingAccuracy >= 80) return '#FF9800';
-    return '#F44336';
+    if (typingAccuracy >= 95) return colors.success;
+    if (typingAccuracy >= 80) return colors.warning;
+    return colors.danger;
   };
 
-  // Get color based on authentication status
-  const getAuthStatusColor = () => {
-    switch (authenticationStatus) {
-      case 'PASS': return '#4CAF50';
-      case 'ESCALATE_TO_T2': return '#FF9800';
-      case 'ESCALATE_TO_T3': return '#F44336';
-      default: return '#666';
-    }
+  const authStatusTone = () => {
+    if (authenticationStatus === 'PASS') return 'success' as const;
+    if (authenticationStatus === 'ESCALATE_TO_T3') return 'danger' as const;
+    if (authenticationStatus === 'ESCALATE_TO_T2') return 'warning' as const;
+    return 'neutral' as const;
   };
 
   // Highlight typed characters
   const renderHighlightedText = () => {
     return captchaSentence.split('').map((char, index) => {
       let backgroundColor = 'transparent';
-      let color = '#666';
+      let color = colors.textSecondary;
 
       if (index < captchaInput.length) {
         if (captchaInput[index] === char) {
-          backgroundColor = '#E8F5E8';
-          color = '#2E7D32';
+          backgroundColor = colors.successSoft;
+          color = colors.success;
         } else {
-          backgroundColor = '#FFEBEE';
-          color = '#C62828';
+          backgroundColor = colors.dangerSoft;
+          color = colors.danger;
         }
       } else if (index === captchaInput.length) {
-        backgroundColor = '#E3F2FD';
-        color = '#1976D2';
+        backgroundColor = colors.accentSoft;
+        color = colors.accentText;
       }
 
       return (
         <Text
           key={index}
-          style={[styles.highlightChar, { backgroundColor, color }]}
+          variant="mono"
+          style={[
+            styles.highlightChar,
+            {
+              backgroundColor,
+              color,
+              fontFamily: Platform.OS === 'ios' ? monoFont.ios : monoFont.android,
+            },
+          ]}
         >
           {char}
         </Text>
@@ -1523,768 +1537,431 @@ const handleNoteChange = async (text) => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={['#019EEC', '#0078C9']}
-        style={styles.header}
-      >
-        <TouchableOpacity
-          onPress={() => {
-            trackTouch('navigation', { target: 'back_button' });
-            router.back();
-          }}
-        >
-          <Ionicons name="arrow-back" size={24} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Send Money</Text>
-        <View style={{ width: 24 }} />
-      </LinearGradient>
+    <Screen edges={['left', 'right']}>
+      <AppHeader
+        title="Send money"
+        onBack={() => {
+          trackTouch('navigation', { target: 'back_button' });
+          router.back();
+        }}
+      />
 
       <KeyboardAwareScrollView
         style={styles.content}
         onScroll={() => trackTouch('scroll', { target: 'main_scroll' })}
         scrollEventThrottle={1000}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Method Selection */}
-        <View style={styles.methodContainer}>
-          <Text style={styles.sectionTitle}>Select Method</Text>
-          <View style={styles.methodButtons}>
-            {['UPI', 'Account', 'Mobile'].map(method => (
-              <TouchableOpacity
-                key={method}
-                style={[
-                  styles.methodButton,
-                  selectedMethod === method && styles.selectedMethod
+        <View style={styles.formBody}>
+          <View style={{ gap: spacing.lg }}>
+            <Section title="Transfer method">
+              <SegmentedControl
+                options={[
+                  { value: 'UPI', label: 'UPI' },
+                  { value: 'Account', label: 'Account' },
+                  { value: 'Mobile', label: 'Mobile' },
                 ]}
-                onPress={() => {
-                  setSelectedMethod(method);
-                  trackTouch('tap', { target: `method_${method}` });
+                value={selectedMethod}
+                onChange={(value: string) => {
+                  setSelectedMethod(value);
+                  trackTouch('tap', { target: `method_${value}` });
                 }}
-              >
-                <Text style={[
-                  styles.methodText,
-                  selectedMethod === method && styles.selectedMethodText
-                ]}>
-                  {method}
+              />
+            </Section>
+
+            <Card style={{ gap: spacing.lg }}>
+              <Field
+                label="Recipient name"
+                required
+                value={recipient}
+                onChangeText={(text) => {
+                  setRecipient(text);
+                  trackTouch('input', { target: 'recipient_input' });
+                }}
+                onFocus={() => handleInputFocus('recipient_input')}
+                onBlur={() => handleInputBlur('recipient_input')}
+                placeholder="Full name"
+                autoCapitalize="words"
+                leadingIcon="person-outline"
+              />
+
+              {selectedMethod === 'UPI' ? (
+                <Field
+                  label="UPI ID"
+                  required
+                  value={upiId}
+                  onChangeText={(text) => {
+                    setUpiId(text);
+                    trackTouch('input', { target: 'upi_input' });
+                  }}
+                  onFocus={() => handleInputFocus('upi_input')}
+                  onBlur={() => handleInputBlur('upi_input')}
+                  placeholder="name@bank"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  leadingIcon="at-outline"
+                />
+              ) : null}
+            </Card>
+
+            <Card style={{ gap: spacing.lg }}>
+              <View style={{ gap: 8 }}>
+                <Text variant="footnote" tone="secondary" style={styles.fieldLabel}>
+                  Amount
+                  <Text variant="footnote" tone="danger"> *</Text>
                 </Text>
-              </TouchableOpacity>
-            ))}
+                <View
+                  style={[
+                    styles.amountBox,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                      borderRadius: radius.md,
+                    },
+                  ]}
+                >
+                  <Text variant="title2" tone="tertiary" style={{ marginLeft: 14 }}>
+                    ₹
+                  </Text>
+                  <TextInput
+                    value={amount}
+                    onChangeText={(text) => {
+                      setAmount(text.replace(/[^0-9.]/g, ''));
+                      trackTouch('input', { target: 'amount_input' });
+                    }}
+                    onFocus={() => handleInputFocus('amount_input')}
+                    onBlur={() => handleInputBlur('amount_input')}
+                    placeholder="0"
+                    placeholderTextColor={colors.textTertiary}
+                    keyboardType="decimal-pad"
+                    accessibilityLabel="Amount in rupees"
+                    style={[
+                      styles.amountInput,
+                      {
+                        color: colors.text,
+                        fontSize: 34,
+                        lineHeight: 42,
+                        fontWeight: fontWeight.bold,
+                        letterSpacing: -0.8,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.quickRow}>
+                {['100', '500', '1000', '2000'].map((amt) => (
+                  <Button
+                    key={amt}
+                    label={`₹${amt}`}
+                    tone="tertiary"
+                    size="md"
+                    onPress={() => {
+                      setAmount(amt);
+                      trackTouch('tap', { target: `quick_amount_${amt}` });
+                    }}
+                    style={{ flex: 1 }}
+                  />
+                ))}
+              </View>
+            </Card>
+
+            <Card>
+              <Field
+                label="Note"
+                value={note}
+                onChangeText={handleNoteChange}
+                onFocus={() => handleInputFocus('note_input')}
+                onBlur={() => handleInputBlur('note_input')}
+                placeholder="What's this for?"
+                multiline
+                numberOfLines={3}
+                inputStyle={{ minHeight: 64, textAlignVertical: 'top' }}
+                hint="A note strengthens the behavioural signature for this transfer."
+              />
+            </Card>
           </View>
+
+          {jsonSnapshot ? (
+            <Card style={{ marginTop: spacing.lg, gap: spacing.md }}>
+              <View style={styles.monitorHead}>
+                <View style={{ flex: 1 }}>
+                  <Text variant="sectionLabel" tone="secondary" uppercase>
+                    Tier 1 monitoring
+                  </Text>
+                  <Text variant="caption" tone="tertiary" style={{ marginTop: 2 }}>
+                    {new Date(jsonSnapshot.timestamp).toLocaleTimeString()} ·{' '}
+                    {Math.round(jsonSnapshot.screenInfo?.sessionDuration || 0)}s session
+                  </Text>
+                </View>
+                <Badge label={authenticationStatus} tone={authStatusTone()} />
+              </View>
+
+              <View style={styles.monitorGrid}>
+                {[
+                  { label: 'Interactions', value: String(jsonSnapshot.interactionStats?.totalInteractions || 0) },
+                  { label: 'Form progress', value: `${jsonSnapshot.screenInfo?.formProgress || 0}%` },
+                  { label: 'Typing now', value: isActivelyTyping ? 'Yes' : 'No' },
+                  { label: 'Focused field', value: focusedInput || 'None' },
+                ].map((item) => (
+                  <View key={item.label} style={styles.monitorCell}>
+                    <Text variant="caption" tone="tertiary">
+                      {item.label}
+                    </Text>
+                    <Text variant="footnote" numberOfLines={1} tabular>
+                      {item.value}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {lastAuthResult ? (
+                <Text variant="caption" tone="secondary">
+                  Anomaly score {lastAuthResult.anomaly_score?.toFixed(2) ?? 'N/A'}
+                </Text>
+              ) : null}
+            </Card>
+          ) : null}
         </View>
-
-        {/* Recipient Details */}
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Recipient Name *</Text>
-          <TextInput
-            style={styles.input}
-            value={recipient}
-            onChangeText={(text) => {
-              setRecipient(text);
-              trackTouch('input', { target: 'recipient_input' });
-            }}
-            onFocus={() => handleInputFocus('recipient_input')}
-            onBlur={() => handleInputBlur('recipient_input')}
-            placeholder="Enter recipient name"
-          />
-        </View>
-
-        {selectedMethod === 'UPI' && (
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>UPI ID *</Text>
-            <TextInput
-              style={styles.input}
-              value={upiId}
-              onChangeText={(text) => {
-                setUpiId(text);
-                trackTouch('input', { target: 'upi_input' });
-              }}
-              onFocus={() => handleInputFocus('upi_input')}
-              onBlur={() => handleInputBlur('upi_input')}
-              placeholder="example@upi"
-              keyboardType="email-address"
-            />
-          </View>
-        )}
-
-        {/* Amount */}
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Amount *</Text>
-          <View style={styles.amountContainer}>
-            <Text style={styles.currencySymbol}>₹</Text>
-            <TextInput
-              style={styles.amountInput}
-              value={amount}
-              onChangeText={(text) => {
-                setAmount(text);
-                trackTouch('input', { target: 'amount_input' });
-              }}
-              onFocus={() => handleInputFocus('amount_input')}
-              onBlur={() => handleInputBlur('amount_input')}
-              placeholder="0"
-              keyboardType="numeric"
-            />
-          </View>
-        </View>
-
-        {/* Quick Amount Buttons */}
-        <View style={styles.quickAmounts}>
-          {['100', '500', '1000', '2000'].map(amt => (
-            <TouchableOpacity
-              key={amt}
-              style={styles.quickAmountBtn}
-              onPress={() => {
-                setAmount(amt);
-                trackTouch('tap', { target: `quick_amount_${amt}` });
-              }}
-            >
-              <Text style={styles.quickAmountText}>₹{amt}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Note */}
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Note (Optional)</Text>
-          <TextInput
-            style={styles.input}
-            value={note}
-            onChangeText={handleNoteChange}
-            onFocus={() => handleInputFocus('note_input')}
-            onBlur={() => handleInputBlur('note_input')}
-            placeholder="Add a note"
-            multiline
-          />
-        </View>
-
-        {/* Send Button */}
-        <TouchableOpacity
-          style={styles.sendButton}
-          onPress={() => {
-            trackTouch('tap', { target: 'send_money_button' });
-            handleSendMoney();
-          }}
-        >
-          <LinearGradient
-            colors={['#019EEC', '#0078C9']}
-            style={styles.sendGradient}
-          >
-            <Ionicons name="send" size={20} color="white" />
-            <Text style={styles.sendButtonText}>Send Money</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-
-        {/* Enhanced Monitoring Status Display with T1 Model Results */}
-        {jsonSnapshot && (
-          <View style={styles.monitoringStatus}>
-            <Text style={styles.monitoringTitle}>🔐 T1 Behavioral Authentication</Text>
-            <Text style={styles.monitoringText}>Last Update: {new Date(jsonSnapshot.timestamp).toLocaleTimeString()}</Text>
-            <Text style={styles.monitoringText}>Session Duration: {Math.round(jsonSnapshot.screenInfo?.sessionDuration || 0)}s</Text>
-            <Text style={styles.monitoringText}>Interactions: {jsonSnapshot.interactionStats?.totalInteractions || 0}</Text>
-            <Text style={styles.monitoringText}>Form Progress: {jsonSnapshot.screenInfo?.formProgress || 0}%</Text>
-            <Text style={styles.monitoringText}>Currently Typing: {isActivelyTyping ? '✅ Yes' : '❌ No'}</Text>
-            <Text style={styles.monitoringText}>Focused Input: {focusedInput || 'None'}</Text>
-            <Text style={[styles.authStatusText, { color: getAuthStatusColor() }]}>
-              Auth Status: {authenticationStatus}
-            </Text>
-            {lastAuthResult && (
-              <Text style={styles.monitoringText}>
-                Anomaly Score: {lastAuthResult.anomaly_score?.toFixed(2) || 'N/A'}
-              </Text>
-            )}
-          </View>
-        )}
       </KeyboardAwareScrollView>
 
-      {/* Enhanced Scrollable Typing CAPTCHA Verification Modal */}
-      <Modal
+      <Sheet
         visible={captchaVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => {
+        onClose={() => {
           setCaptchaVisible(false);
           setSamplingActive(true);
           trackTouch('modal_closed', { target: 'captcha_modal' });
         }}
-      >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalBackdrop}
-        >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalBox}>
-              <KeyboardAwareScrollView 
-                style={styles.modalKeyboardAwareScrollView}
-                onScroll={() => trackTouch('scroll', { target: 'captcha_scroll' })}
-              >
-                <View style={styles.modalScrollContent}>
-                  <View style={styles.modalHeader}>
-                    <Text style={styles.modalTitle}>T1 Behavioral Verification</Text>
-                    <Text style={styles.modalSubtitle}>
-                      Type the sentence below exactly as shown (95% accuracy required)
-                    </Text>
-                    <Text style={[styles.authStatusIndicator, { color: getAuthStatusColor() }]}>
-                      Current Auth Status: {authenticationStatus}
-                    </Text>
-                  </View>
-
-                  {/* Sentence Display with Highlighting */}
-                  <View style={styles.sentenceContainer}>
-                    <Text style={styles.sentenceLabel}>Type this sentence:</Text>
-                    <View style={styles.sentenceHolder}>
-                      {renderHighlightedText()}
-                    </View>
-                  </View>
-
-                  {/* Enhanced Accuracy Indicator */}
-                  <View style={styles.accuracyContainer}>
-                    <View style={styles.accuracyInfo}>
-                      <Text style={styles.accuracyLabel}>Accuracy:</Text>
-                      <Text style={[styles.accuracyValue, { color: getAccuracyColor() }]}>
-                        {typingAccuracy}%
-                      </Text>
-                    </View>
-                    <View style={styles.progressBar}>
-                      <View
-                        style={[
-                          styles.progressFill,
-                          {
-                            width: `${typingAccuracy}%`,
-                            backgroundColor: getAccuracyColor()
-                          }
-                        ]}
-                      />
-                    </View>
-
-                    {/* Additional Metrics with T1 Model Data */}
-                    <View style={styles.additionalMetrics}>
-                      <Text style={styles.metricText}>
-                        Speed: {keystrokeData.length > 0 ? Math.round((keystrokeData.length / ((Date.now() - startTime) / 1000)) * 60) : 0} CPM
-                      </Text>
-                      <Text style={styles.metricText}>
-                        Errors: {keystrokeData.filter(k => k.isBackspace).length}
-                      </Text>
-                      <Text style={styles.metricText}>
-                        Active Typing: {isActivelyTyping ? '✅' : '❌'}
-                      </Text>
-                      <Text style={styles.metricText}>
-                        T1 Status: {authenticationStatus}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Typing Input */}
-                  <View style={styles.inputSection}>
-                    <Text style={styles.inputSectionLabel}>Your typing:</Text>
-                    <TextInput
-                      style={styles.typingInput}
-                      value={captchaInput}
-                      onChangeText={handleTypingInput}
-                      onFocus={() => {
-                        handleInputFocus('captcha_input');
-                        console.log('🎯 CAPTCHA typing started');
-                      }}
-                      onBlur={() => {
-                        handleInputBlur('captcha_input');
-                        console.log('🎯 CAPTCHA typing paused');
-                      }}
-                      multiline
-                      autoFocus
-                      textAlignVertical="top"
-                    />
-
-                    {/* Enhanced Character Count */}
-                    <View style={styles.characterCountContainer}>
-                      <Text style={styles.characterCount}>
-                        {captchaInput.length} / {captchaSentence.length} characters
-                      </Text>
-                      <Text style={styles.completionIndicator}>
-                        {isTypingComplete ? '✅ Ready to verify' : '⏳ Keep typing...'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* T1 Model Real-time Feedback */}
-                  {lastAuthResult && (
-                    <View style={styles.t1FeedbackContainer}>
-                      <Text style={styles.t1FeedbackTitle}>🤖 T1 Model Analysis</Text>
-                      
-                      <View style={styles.t1MetricsGrid}>
-                        <View style={styles.t1Metric}>
-                          <Text style={styles.t1MetricLabel}>Anomaly Score</Text>
-                          <Text style={styles.t1MetricValue}>
-                            {lastAuthResult.anomaly_score?.toFixed(2) || 'N/A'}
-                          </Text>
-                        </View>
-                        
-                        <View style={styles.t1Metric}>
-                          <Text style={styles.t1MetricLabel}>Risk Level</Text>
-                          <Text style={styles.t1MetricValue}>
-                            {lastAuthResult.authentication_result?.risk_level || 'UNKNOWN'}
-                          </Text>
-                        </View>
-                        
-                        <View style={styles.t1Metric}>
-                          <Text style={styles.t1MetricLabel}>Confidence</Text>
-                          <Text style={styles.t1MetricValue}>
-                            {(lastAuthResult.authentication_result?.confidence * 100)?.toFixed(0) || 0}%
-                          </Text>
-                        </View>
-                        
-                        <View style={styles.t1Metric}>
-                          <Text style={styles.t1MetricLabel}>Flags</Text>
-                          <Text style={styles.t1MetricValue}>
-                            {lastAuthResult.rule_flags?.length || 0}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {lastAuthResult.rule_flags && lastAuthResult.rule_flags.length > 0 && (
-                        <View style={styles.flagsContainer}>
-                          <Text style={styles.flagsTitle}>⚠️ Detected Issues:</Text>
-                          {lastAuthResult.rule_flags.map((flag, index) => (
-                            <Text key={index} style={styles.flagText}>
-                              • {flag}
-                            </Text>
-                          ))}
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Action Buttons */}
-                  <View style={styles.modalButtons}>
-                    <TouchableOpacity
-                      style={[
-                        styles.modalBtn,
-                        !isTypingComplete && styles.disabledBtn
-                      ]}
-                      onPress={() => {
-                        trackTouch('tap', { target: 'verify_typing_button' });
-                        verifyTyping();
-                      }}
-                      disabled={!isTypingComplete}
-                    >
-                      <Text style={styles.modalBtnText}>
-                        {isTypingComplete ? 'Verify & Continue' : 'Complete Typing'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.bottomButtons}>
-                    <TouchableOpacity
-                      style={styles.refreshBtn}
-                      onPress={() => {
-                        trackTouch('tap', { target: 'refresh_captcha_button' });
-                        refreshCaptcha();
-                      }}
-                    >
-                      <Ionicons name="refresh" size={16} color="#019EEC" />
-                      <Text style={styles.refreshBtnText}>New Sentence</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.cancelBtn}
-                      onPress={() => {
-                        setCaptchaVisible(false);
-                        setSamplingActive(true);
-                        trackTouch('tap', { target: 'cancel_captcha_button' });
-                      }}
-                    >
-                      <Text style={styles.cancelText}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Extra space for keyboard */}
-                  <View style={styles.keyboardSpace} />
-                </View>
-              </KeyboardAwareScrollView>
+        title="Verify it's you"
+        subtitle="Type the sentence exactly as shown. 95% accuracy required."
+        footer={
+          <View style={{ gap: spacing.sm }}>
+            <Button
+              label={isTypingComplete ? 'Verify and continue' : 'Finish typing first'}
+              onPress={() => {
+                trackTouch('tap', { target: 'verify_typing_button' });
+                verifyTyping();
+              }}
+              disabled={!isTypingComplete}
+              trailingIcon="arrow-forward"
+            />
+            <View style={styles.sheetFooterRow}>
+              <Button
+                label="New sentence"
+                tone="plain"
+                fullWidth={false}
+                icon="refresh-outline"
+                onPress={() => {
+                  trackTouch('tap', { target: 'refresh_captcha_button' });
+                  refreshCaptcha();
+                }}
+              />
+              <Button
+                label="Cancel"
+                tone="plain"
+                fullWidth={false}
+                onPress={() => {
+                  setCaptchaVisible(false);
+                  setSamplingActive(true);
+                  trackTouch('tap', { target: 'cancel_captcha_button' });
+                }}
+              />
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
-    </SafeAreaView>
+        }
+      >
+        <View style={{ gap: spacing.lg }}>
+          <View style={{ gap: 6 }}>
+            <Text variant="sectionLabel" tone="secondary" uppercase>
+              Type this sentence
+            </Text>
+            <View
+              style={[
+                styles.sentenceBox,
+                {
+                  backgroundColor: colors.surfaceMuted,
+                  borderColor: colors.border,
+                  borderRadius: radius.md,
+                },
+              ]}
+            >
+              {renderHighlightedText()}
+            </View>
+          </View>
+
+          <View style={{ gap: 8 }}>
+            <View style={styles.accuracyRow}>
+              <Text variant="caption" tone="secondary">
+                Accuracy
+              </Text>
+              <Text variant="subhead" tabular style={{ color: getAccuracyColor(), fontWeight: fontWeight.semibold }}>
+                {typingAccuracy}%
+              </Text>
+            </View>
+            <View style={[styles.progressTrack, { backgroundColor: colors.surfaceSunken }]}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${Math.min(100, typingAccuracy)}%`, backgroundColor: getAccuracyColor() },
+                ]}
+              />
+            </View>
+            <View style={styles.metricRow}>
+              <Text variant="caption" tone="tertiary">
+                {keystrokeData.length > 0
+                  ? `${Math.round((keystrokeData.length / ((Date.now() - startTime) / 1000)) * 60)} CPM`
+                  : '0 CPM'}
+              </Text>
+              <Text variant="caption" tone="tertiary">
+                {keystrokeData.filter((k) => k.isBackspace).length} corrections
+              </Text>
+              <Text variant="caption" tone="tertiary">
+                {isActivelyTyping ? 'Active' : 'Paused'}
+              </Text>
+            </View>
+          </View>
+
+          <Field
+            label="Your typing"
+            value={captchaInput}
+            onChangeText={handleTypingInput}
+            onFocus={() => handleInputFocus('captcha_input')}
+            onBlur={() => handleInputBlur('captcha_input')}
+            placeholder="Type the sentence above"
+            multiline
+            numberOfLines={4}
+            autoFocus
+            inputStyle={{
+              minHeight: 110,
+              textAlignVertical: 'top',
+              fontSize: fontSize.mono,
+              lineHeight: lineHeight.mono,
+              fontFamily: Platform.OS === 'ios' ? monoFont.ios : monoFont.android,
+            }}
+            hint={`${captchaInput.length} of ${captchaSentence.length} characters`}
+          />
+
+          {lastAuthResult ? (
+            <View style={{ gap: spacing.md }}>
+              <Text variant="sectionLabel" tone="secondary" uppercase>
+                Live analysis
+              </Text>
+              <View style={styles.monitorGrid}>
+                {[
+                  { label: 'Anomaly score', value: lastAuthResult.anomaly_score?.toFixed(2) || 'N/A' },
+                  { label: 'Risk level', value: lastAuthResult.authentication_result?.risk_level || 'Unknown' },
+                  {
+                    label: 'Confidence',
+                    value: `${((lastAuthResult.authentication_result?.confidence || 0) * 100).toFixed(0)}%`,
+                  },
+                  { label: 'Flags', value: String(lastAuthResult.rule_flags?.length || 0) },
+                ].map((item) => (
+                  <View key={item.label} style={styles.monitorCell}>
+                    <Text variant="caption" tone="tertiary">
+                      {item.label}
+                    </Text>
+                    <Text variant="footnote" numberOfLines={1} tabular>
+                      {item.value}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {lastAuthResult.rule_flags?.length ? (
+                <Banner
+                  tone="warning"
+                  title="Signals detected"
+                  message={lastAuthResult.rule_flags.join(' · ')}
+                />
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      </Sheet>
+    </Screen>
   );
 }
 
-// Complete Enhanced styles with T1 model components
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8f9fa' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    paddingTop: 50,
-  },
-  headerTitle: { fontSize: 18, fontWeight: '600', color: '#fff' },
-  content: { flex: 1, padding: 16 },
-  methodContainer: { marginBottom: 24 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12, color: '#333' },
-  methodButtons: { flexDirection: 'row', gap: 12 },
-  methodButton: {
+  content: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    alignItems: 'center',
-    backgroundColor: '#fff',
   },
-  selectedMethod: { backgroundColor: '#019EEC', borderColor: '#019EEC' },
-  methodText: { color: '#666', fontWeight: '500' },
-  selectedMethodText: { color: '#fff' },
-  inputContainer: { marginBottom: 20 },
-  label: { fontSize: 14, fontWeight: '500', marginBottom: 8, color: '#333' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
+  formBody: {
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
+    padding: 16,
+    paddingBottom: 48,
   },
-  amountContainer: {
+  fieldLabel: {
+    fontWeight: '600',
+  },
+  amountBox: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#fff',
-  },
-  currencySymbol: {
-    fontSize: 18,
-    fontWeight: '600',
-    paddingLeft: 12,
-    color: '#333',
+    minHeight: 66,
+    paddingRight: 14,
   },
   amountInput: {
     flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
   },
-  quickAmounts: {
+  quickRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 24,
-  },
-  quickAmountBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 6,
-    backgroundColor: '#f0f8ff',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e3f2fd',
-  },
-  quickAmountText: { color: '#019EEC', fontWeight: '500' },
-  sendButton: { borderRadius: 12, overflow: 'hidden', marginTop: 20 },
-  sendGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
     gap: 8,
   },
-  sendButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-
-  // Enhanced Monitoring Status Styles with T1 Model
-  monitoringStatus: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#019EEC',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  monitoringTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  monitoringText: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-  },
-  authStatusText: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-
-  // Enhanced Modal Styles
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalBox: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '90%',
-    minHeight: '60%',
-  },
-  modalKeyboardAwareScrollView: {
-    flex: 1,
-  },
-  modalScrollContent: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  modalHeader: {
+  monitorHead: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    gap: 12,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginTop: 8,
-    marginBottom: 8,
-    color: '#333'
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 8,
-  },
-  authStatusIndicator: {
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  sentenceContainer: {
-    width: '100%',
-    marginBottom: 20,
-  },
-  sentenceLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  sentenceHolder: {
+  monitorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    alignItems: 'flex-start',
-    padding: 12,
-    borderWidth: 2,
-    borderColor: '#019EEC',
-    borderRadius: 8,
-    backgroundColor: '#f8f9fa',
-    minHeight: 60,
-    minWidth: '100%',
+    gap: 8,
   },
-  highlightChar: {
-    fontSize: 16,
-    paddingHorizontal: 1,
-    paddingVertical: 2,
-    borderRadius: 2,
-    lineHeight: 24,
+  monitorCell: {
+    flexGrow: 1,
+    flexBasis: '45%',
+    gap: 2,
   },
-  accuracyContainer: {
-    marginBottom: 8,
+  sentenceBox: {
+    padding: 14,
+    borderWidth: 1,
   },
-  accuracyInfo: {
+  accuracyRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    justifyContent: 'space-between',
   },
-  accuracyLabel: {
-    fontSize: 12,
-    color: '#666',
-  },
-  accuracyValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  progressBar: {
-    height: 4,
-    backgroundColor: '#e0e0e0',
-    borderRadius: 2,
+  progressTrack: {
+    height: 6,
+    borderRadius: 999,
     overflow: 'hidden',
-    marginBottom: 8,
   },
   progressFill: {
     height: '100%',
-    borderRadius: 2,
+    borderRadius: 999,
   },
-  additionalMetrics: {
+  metricRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
   },
-  metricText: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
-    marginRight: 8,
-    marginBottom: 4,
-  },
-
-  // T1 Model Feedback Styles
-  t1FeedbackContainer: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  t1FeedbackTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  t1MetricsGrid: {
+  sheetFooterRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
   },
-  t1Metric: {
-    width: '48%',
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e9ecef',
-  },
-  t1MetricLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  t1MetricValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    textAlign: 'center',
-  },
-  flagsContainer: {
-    backgroundColor: '#fff3cd',
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#ffeaa7',
-  },
-  flagsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#856404',
-    marginBottom: 8,
-  },
-  flagText: {
-    fontSize: 12,
-    color: '#856404',
-    marginBottom: 4,
-  },
-  inputSection: {
-    marginBottom: 20,
-  },
-  inputSectionLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  typingInput: {
-    width: '100%',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
-    minHeight: 100,
-    maxHeight: 150,
-  },
-  characterCountContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  characterCount: {
-    fontSize: 12,
-    color: '#666',
-  },
-  completionIndicator: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#019EEC',
-  },
-  modalButtons: {
-    width: '100%',
-    marginBottom: 20,
-  },
-  modalBtn: {
-    width: '100%',
-    backgroundColor: '#019EEC',
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  disabledBtn: {
-    backgroundColor: '#ccc',
-  },
-  modalBtnText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 16
-  },
-  bottomButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  refreshBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: '#f0f8ff',
-    gap: 4,
-  },
-  refreshBtnText: {
-    fontSize: 12,
-    color: '#019EEC',
-    fontWeight: '500',
-  },
-  cancelBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  cancelText: {
-    color: '#666',
-    fontSize: 14,
-    fontWeight: '500'
-  },
-  keyboardSpace: {
-    height: 100,
+  highlightChar: {
+    borderRadius: 4,
+    paddingHorizontal: 1,
+    paddingVertical: 3,
+    lineHeight: 24,
   },
 });
+
