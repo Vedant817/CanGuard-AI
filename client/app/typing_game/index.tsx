@@ -1,18 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
-  Text,
   TextInput,
   StyleSheet,
-  TouchableOpacity,
   ScrollView,
   Alert,
-  Dimensions,
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
@@ -24,8 +19,18 @@ import { v4 as uuidv4 } from 'uuid';
 import API_BASE_URL from '@/config/api';
 import blockchainService from '@/services/blockchainService';
 import { viewAllStoredData, viewBlockchainMetadata, viewUserStreams, viewPermissionRequests } from '@/utils/debugStorage';
-
-const { width } = Dimensions.get('window');
+import { useTheme, monoFont } from '@/theme';
+import {
+  Text,
+  Button,
+  Card,
+  Section,
+  Badge,
+  Banner,
+  AppHeader,
+  Screen,
+  Divider,
+} from '@/components/ui';
 
 const SAMPLE_TEXTS = [
   "Banking security is paramount in today's digital world. Protect your financial information at all times.",
@@ -264,6 +269,7 @@ class BehavioralDataCollector {
 }
 
 export default function TypingGameScreen() {
+  const { colors, spacing, radius, fontSize, fontWeight, lineHeight } = useTheme();
   const [currentText, setCurrentText] = useState('');
   const [userInput, setUserInput] = useState('');
   const [isGameActive, setIsGameActive] = useState(false);
@@ -777,21 +783,21 @@ const saveBehavioralDataWithVectors = async (typingStats: TypingStats) => {
   const renderEnhancedTextOptimized = () => {
     const words = currentText.split(' ');
     let charIndex = 0;
-    
+
     return (
-      <Text style={styles.textWrapper}>
+      <Text variant="mono" style={styles.textWrapper}>
         {words.map((word, wordIndex) => {
           const styledWord = word.split('').map((char, charInWordIndex) => {
             const currentCharIndex = charIndex + charInWordIndex;
             let style = styles.defaultChar;
-            
+
             if (currentCharIndex < userInput.length) {
               style = userInput[currentCharIndex] === char ? styles.correctChar : styles.incorrectChar;
             } else if (currentCharIndex === userInput.length) {
               style = styles.currentChar;
             }
-            
-            return (<Text key={`${wordIndex}-${charInWordIndex}`} style={style}>{char}</Text>);
+
+            return (<Text key={`${wordIndex}-${charInWordIndex}`} variant="mono" style={style}>{char}</Text>);
           });
           
           charIndex += word.length;
@@ -813,9 +819,11 @@ const saveBehavioralDataWithVectors = async (typingStats: TypingStats) => {
           })();
           
           return (
-            <Text key={wordIndex}>
+            <Text key={wordIndex} variant="mono">
               {styledWord}
-              {wordIndex < words.length - 1 && (<Text style={spaceStyle || styles.defaultChar}> </Text>)}
+              {wordIndex < words.length - 1 && (
+                <Text variant="mono" style={spaceStyle || styles.defaultChar}> </Text>
+              )}
             </Text>
           );
         })}
@@ -824,191 +832,312 @@ const saveBehavioralDataWithVectors = async (typingStats: TypingStats) => {
   };
 
   const getWPMColor = (wpm: number) => {
-    if (wpm >= 60) return '#4CAF50';
-    if (wpm >= 40) return '#FF9800';
-    return '#F44336';
+    if (wpm >= 60) return colors.success;
+    if (wpm >= 40) return colors.warning;
+    return colors.danger;
   };
 
   const getAccuracyColor = (accuracy: number) => {
-    if (accuracy >= 95) return '#4CAF50';
-    if (accuracy >= 85) return '#FF9800';
-    return '#F44336';
+    if (accuracy >= 95) return colors.success;
+    if (accuracy >= 85) return colors.warning;
+    return colors.danger;
   };
 
+  const liveMetrics = [
+    { label: 'CPM', value: String(stats.typingSpeed) },
+    { label: 'Hold', value: `${stats.averageKeyHoldTime}ms` },
+    { label: 'Flight', value: `${stats.averageFlightTime}ms` },
+    { label: 'Latency', value: `${stats.averageKeyboardLatency}ms` },
+    { label: 'Errors', value: `${stats.errorRate}%` },
+    { label: 'Rhythm', value: `${stats.averageTapRhythm}ms` },
+  ];
+
+  const results = [
+    { label: 'Words per minute', value: `${stats.wpm}`, color: getWPMColor(stats.wpm) },
+    { label: 'Accuracy', value: `${stats.accuracy}%`, color: getAccuracyColor(stats.accuracy) },
+    { label: 'Total time', value: `${stats.totalTime}s`, color: colors.text },
+    { label: 'Correct characters', value: `${stats.correctKeystrokes}`, color: colors.text },
+    { label: 'Average hold', value: `${stats.averageKeyHoldTime}ms`, color: colors.text },
+    { label: 'Error rate', value: `${stats.errorRate}%`, color: colors.text },
+  ];
+
+  const deviceRows = [
+    { label: 'Device', value: `${deviceMetrics.deviceInfo.brand} ${deviceMetrics.deviceInfo.model}` },
+    { label: 'Device ID', value: `${deviceMetrics.deviceUUID.substring(0, 8)}…` },
+    { label: 'IP address', value: deviceMetrics.ipAddress },
+    {
+      label: 'Network',
+      value: `${deviceMetrics.networkInfo.type} · ${deviceMetrics.networkInfo.isConnected ? 'online' : 'offline'}`,
+    },
+    {
+      label: 'GPS',
+      value: deviceMetrics.gpsLocation
+        ? `${deviceMetrics.gpsLocation.latitude.toFixed(4)}, ${deviceMetrics.gpsLocation.longitude.toFixed(4)}`
+        : 'Unavailable',
+    },
+    {
+      label: 'Battery',
+      value: `${Math.round(deviceMetrics.deviceInfo.batteryLevel * 100)}%${
+        deviceMetrics.deviceInfo.isCharging ? ' · charging' : ''
+      }`,
+    },
+  ];
+
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
-      
-      <LinearGradient colors={['#019EEC', '#0080CC']} style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>CanGuard Typing Dojo</Text>
-          <Text style={styles.headerSubtitle}>Behavioral Authentication Training</Text>
-        </View>
-        <TouchableOpacity style={styles.skipButton} onPress={() => router.replace('/(tabs)')}>
-          <Text style={styles.skipButtonText}>Skip</Text>
-        </TouchableOpacity>
-      </LinearGradient>
-
-      <ScrollView style={styles.content}>
-        {gameStarted && (
-          <View style={styles.statsContainer}>
-            <View style={styles.statItem}><Text style={styles.statValue}>{stats.typingSpeed}</Text><Text style={styles.statLabel}>CPM</Text></View>
-            <View style={styles.statItem}><Text style={styles.statValue}>{stats.averageKeyHoldTime}ms</Text><Text style={styles.statLabel}>Hold Time</Text></View>
-            <View style={styles.statItem}><Text style={styles.statValue}>{stats.averageFlightTime}ms</Text><Text style={styles.statLabel}>Flight Time</Text></View>
-            <View style={styles.statItem}><Text style={styles.statValue}>{stats.averageKeyboardLatency}ms</Text><Text style={styles.statLabel}>Kbd Latency</Text></View>
-            <View style={styles.statItem}><Text style={styles.statValue}>{stats.errorRate}%</Text><Text style={styles.statLabel}>Error Rate</Text></View>
-            <View style={styles.statItem}><Text style={styles.statValue}>{stats.averageTapRhythm}ms</Text><Text style={styles.statLabel}>Tap Rhythm</Text></View>
-          </View>
-        )}
-
-        {gameStarted && behavioralCollector && (
-          <View style={styles.behavioralStatusContainer}><Text style={styles.behavioralStatusText}>🔄 Collecting behavioral data every 6 seconds...</Text></View>
-        )}
-
-        <View style={styles.textContainer}><View style={styles.textDisplay}>{renderEnhancedTextOptimized()}</View></View>
-
-        <View style={styles.inputContainer}>
-          <TextInput
-            ref={inputRef} style={styles.textInput} value={userInput} onChangeText={handleTextChange}
-            onKeyPress={handleKeyPress} placeholder={gameStarted ? "Start typing..." : "Press Start to begin"}
-            multiline editable={isGameActive} autoCorrect={false} autoCapitalize="none" spellCheck={false}
+    <Screen edges={['left', 'right']}>
+      <AppHeader
+        title="Typing Dojo"
+        subtitle="Behavioural authentication training"
+        onBack={() => router.back()}
+        trailing={
+          <Button
+            label="Skip"
+            tone="plain"
+            size="md"
+            fullWidth={false}
+            onPress={() => router.replace('/(tabs)')}
           />
-        </View>
+        }
+      />
 
-        {gameStarted && (
-          <View style={styles.deviceInfoContainer}>
-            <Text style={styles.deviceInfoTitle}>Device & Network Information</Text>
-            <View style={styles.deviceInfoGrid}>
-              <View style={styles.deviceInfoItem}><Text style={styles.deviceInfoLabel}>Device</Text><Text style={styles.deviceInfoValue}>{deviceMetrics.deviceInfo.brand} {deviceMetrics.deviceInfo.model}</Text></View>
-              <View style={styles.deviceInfoItem}><Text style={styles.deviceInfoLabel}>Device UUID</Text><Text style={styles.deviceInfoValue}>{deviceMetrics.deviceUUID.substring(0, 8)}...</Text></View>
-              <View style={styles.deviceInfoItem}><Text style={styles.deviceInfoLabel}>IP Address</Text><Text style={styles.deviceInfoValue}>{deviceMetrics.ipAddress}</Text></View>
-              <View style={styles.deviceInfoItem}><Text style={styles.deviceInfoLabel}>Network</Text><Text style={styles.deviceInfoValue}>{deviceMetrics.networkInfo.type} {deviceMetrics.networkInfo.isConnected ? ' ✓' : ' ✗'}</Text></View>
-              <View style={styles.deviceInfoItem}><Text style={styles.deviceInfoLabel}>GPS</Text><Text style={styles.deviceInfoValue}>{deviceMetrics.gpsLocation ? `${deviceMetrics.gpsLocation.latitude.toFixed(4)}, ${deviceMetrics.gpsLocation.longitude.toFixed(4)}` : 'Not available'}</Text></View>
-              <View style={styles.deviceInfoItem}><Text style={styles.deviceInfoLabel}>Battery</Text><Text style={styles.deviceInfoValue}>{Math.round(deviceMetrics.deviceInfo.batteryLevel * 100)}%{deviceMetrics.deviceInfo.isCharging ? ' ⚡' : ''}</Text></View>
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={[styles.body, { padding: spacing.lg, gap: spacing.lg }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {gameStarted ? (
+          <Card padded={false} style={{ overflow: 'hidden' }}>
+            <View style={[styles.metricsHead, { padding: spacing.lg, backgroundColor: colors.surfaceMuted }]}>
+              <Text variant="sectionLabel" tone="secondary" uppercase>
+                Live signals
+              </Text>
+              <Badge label="Recording" tone="success" />
             </View>
+            <View style={[styles.metricGrid, { padding: spacing.lg }]}>
+              {liveMetrics.map((metric) => (
+                <View key={metric.label} style={styles.metricCell}>
+                  <Text variant="caption" tone="tertiary">
+                    {metric.label}
+                  </Text>
+                  <Text variant="bodyStrong" tabular>
+                    {metric.value}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </Card>
+        ) : null}
+
+        {gameStarted && behavioralCollector ? (
+          <Banner
+            tone="info"
+            title="Collecting behavioural data"
+            message="A vector is captured every 6 seconds while you type."
+          />
+        ) : null}
+
+        <Card style={{ gap: spacing.md }}>
+          <View style={styles.flex}>
+            {renderEnhancedTextOptimized()}
           </View>
-        )}
+          <Divider />
+          <TextInput
+            ref={inputRef}
+            value={userInput}
+            onChangeText={handleTextChange}
+            onKeyPress={handleKeyPress}
+            placeholder={gameStarted ? 'Start typing the sentence above' : 'Press start to begin'}
+            placeholderTextColor={colors.textTertiary}
+            multiline
+            editable={isGameActive}
+            autoCorrect={false}
+            autoCapitalize="none"
+            spellCheck={false}
+            accessibilityLabel="Typing input"
+            style={[
+              styles.textInput,
+              {
+                color: colors.text,
+                fontSize: fontSize.mono,
+                lineHeight: lineHeight.mono,
+                fontFamily: Platform.OS === 'ios' ? monoFont.ios : monoFont.android,
+              },
+            ]}
+          />
+        </Card>
 
-        <View style={styles.controlsContainer}>
-          {!gameStarted ? (
-            <TouchableOpacity style={styles.startButton} onPress={startGame}>
-              <LinearGradient colors={['#FFB600', '#FF9500']} style={styles.buttonGradient}>
-                <Ionicons name="play" size={20} color="#fff" /><Text style={styles.buttonText}>Start Test</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          ) : !gameCompleted && (
-            <TouchableOpacity style={styles.resetButton} onPress={resetGame}>
-              <Text style={styles.resetButtonText}>Reset</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        {gameStarted ? (
+          <Section title="Device and network">
+            <Card padded={false} style={{ overflow: 'hidden' }}>
+              {deviceRows.map((row, index) => (
+                <View key={row.label}>
+                  {index > 0 ? <Divider inset={spacing.lg} /> : null}
+                  <View style={[styles.deviceRow, { padding: spacing.lg }]}>
+                    <Text variant="footnote" tone="secondary" style={styles.deviceLabel}>
+                      {row.label}
+                    </Text>
+                    <Text variant="footnote" numberOfLines={1} tabular style={styles.deviceValue}>
+                      {row.value}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </Card>
+          </Section>
+        ) : null}
 
-        {gameCompleted && (
-          <View style={styles.resultsContainer}>
-            <Text style={styles.resultsTitle}>🎉 Test Complete!</Text>
-            <View style={styles.successMessage}><Text style={styles.successText}>Great job! Your behavioral profile has been analyzed with {behavioralCollector?.getFinalMetrics().vectorCount || 0} behavioral vectors and saved securely.</Text></View>
-            
-            <View style={styles.resultGrid}>
-              <View style={styles.resultItem}><Text style={styles.resultLabel}>Words Per Minute</Text><Text style={[styles.resultValue, { color: getWPMColor(stats.wpm) }]}>{stats.wpm} WPM</Text></View>
-              <View style={styles.resultItem}><Text style={styles.resultLabel}>Accuracy</Text><Text style={[styles.resultValue, { color: getAccuracyColor(stats.accuracy) }]}>{stats.accuracy}%</Text></View>
-              <View style={styles.resultItem}><Text style={styles.resultLabel}>Total Time</Text><Text style={styles.resultValue}>{stats.totalTime}s</Text></View>
-              <View style={styles.resultItem}><Text style={styles.resultLabel}>Correct Chars</Text><Text style={styles.resultValue}>{stats.correctKeystrokes}</Text></View>
-              <View style={styles.resultItem}><Text style={styles.resultLabel}>Avg Hold Time</Text><Text style={styles.resultValue}>{stats.averageKeyHoldTime}ms</Text></View>
-              <View style={styles.resultItem}><Text style={styles.resultLabel}>Error Rate</Text><Text style={styles.resultValue}>{stats.errorRate}%</Text></View>
-            </View>
+        {!gameStarted ? (
+          <Button label="Start test" icon="play" onPress={startGame} />
+        ) : !gameCompleted ? (
+          <Button label="Reset test" tone="secondary" icon="refresh" onPress={resetGame} />
+        ) : null}
 
-            <View style={styles.actionButtons}>
-              <TouchableOpacity style={styles.continueButton} onPress={() => router.replace('/(tabs)')}>
-                <LinearGradient colors={['#019EEC', '#0080CC']} style={styles.buttonGradient}><Text style={styles.buttonText}>Continue to Banking</Text><Ionicons name="arrow-forward" size={20} color="#fff" /></LinearGradient>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.playAgainButton} onPress={resetGame}>
-                <LinearGradient colors={['#FFB600', '#FF9500']} style={styles.buttonGradient}><Ionicons name="refresh" size={20} color="#fff" /><Text style={styles.buttonText}>Try Again</Text></LinearGradient>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.infoSection}><Text style={styles.infoText}>Your typing patterns and device metrics have been analyzed using advanced behavioral biometrics. The system collected data every 6 seconds and calculated statistical profiles for enhanced security.</Text></View>
-            
-            {/* Debug Section */}
-            <View style={styles.debugSection}>
-              <Text style={styles.debugTitle}>🔍 Debug Data (Development Only)</Text>
-              <View style={styles.debugButtons}>
-                <TouchableOpacity style={styles.debugButton} onPress={viewAllStoredData}>
-                  <Text style={styles.debugButtonText}>View All Data</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.debugButton} onPress={viewBlockchainMetadata}>
-                  <Text style={styles.debugButtonText}>Blockchain Meta</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.debugButton} onPress={viewUserStreams}>
-                  <Text style={styles.debugButtonText}>User Streams</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.debugButton} onPress={viewPermissionRequests}>
-                  <Text style={styles.debugButtonText}>Permissions</Text>
-                </TouchableOpacity>
+        {gameCompleted ? (
+          <View style={{ gap: spacing.lg }}>
+            <Card style={{ gap: spacing.lg }}>
+              <View style={styles.resultHead}>
+                <View style={{ flex: 1 }}>
+                  <Text variant="title3">Test complete</Text>
+                  <Text variant="footnote" tone="secondary" style={{ marginTop: 2 }}>
+                    {behavioralCollector?.getFinalMetrics().vectorCount || 0} behavioural vectors
+                    captured and stored.
+                  </Text>
+                </View>
               </View>
+
+              <Divider />
+
+              <View style={styles.resultGrid}>
+                {results.map((item) => (
+                  <View key={item.label} style={styles.resultCell}>
+                    <Text variant="caption" tone="tertiary">
+                      {item.label}
+                    </Text>
+                    <Text variant="title3" tabular style={{ color: item.color }}>
+                      {item.value}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </Card>
+
+            <Banner
+              tone="success"
+              title="Profile saved"
+              message="Your typing patterns and device metrics were converted into a statistical profile and anchored to the ledger."
+            />
+
+            <View style={{ gap: spacing.sm }}>
+              <Button
+                label="Continue to banking"
+                trailingIcon="arrow-forward"
+                onPress={() => router.replace('/(tabs)')}
+              />
+              <Button label="Try again" tone="secondary" icon="refresh" onPress={resetGame} />
             </View>
+
+            <Section title="Developer tools">
+              <Card tight>
+                {[
+                  { label: 'View all stored data', icon: 'server-outline' as const, onPress: viewAllStoredData },
+                  { label: 'Blockchain metadata', icon: 'link-outline' as const, onPress: viewBlockchainMetadata },
+                  { label: 'User streams', icon: 'git-branch-outline' as const, onPress: viewUserStreams },
+                  { label: 'Permissions', icon: 'key-outline' as const, onPress: viewPermissionRequests },
+                ].map((tool, index) => (
+                  <View key={tool.label}>
+                    {index > 0 ? <Divider inset={spacing.lg} /> : null}
+                    <Button
+                      label={tool.label}
+                      tone="plain"
+                      size="md"
+                      icon={tool.icon}
+                      onPress={tool.onPress}
+                      style={{ justifyContent: 'flex-start', paddingHorizontal: spacing.lg }}
+                    />
+                  </View>
+                ))}
+              </Card>
+            </Section>
           </View>
-        )}
+        ) : null}
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
-  header: { flexDirection: 'row', alignItems: 'center', paddingTop: 50, paddingBottom: 20, paddingHorizontal: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
-  backButton: { padding: 8, backgroundColor: 'rgba(255, 255, 255, 0.15)', borderRadius: 12 },
-  headerContent: { flex: 1, alignItems: 'center' },
-  skipButton: { backgroundColor: 'rgba(255, 255, 255, 0.15)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12 },
-  skipButtonText: { color: '#fff', fontWeight: '600' },
-  headerTitle: { fontSize: 26, fontWeight: '800', color: '#fff', marginBottom: 4, letterSpacing: 0.5 },
-  headerSubtitle: { fontSize: 16, color: 'rgba(255, 255, 255, 0.9)', letterSpacing: 0.3 },
-  content: { flex: 1, padding: 20 },
-  statsContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 20, shadowColor: '#2D3748', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 4 },
-  statItem: { alignItems: 'center', minWidth: '30%', marginBottom: 12, padding: 8 },
-  statValue: { fontSize: 20, fontWeight: '700', color: '#2D3748', marginBottom: 4 },
-  statLabel: { fontSize: 12, color: '#718096', fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.5 },
-  behavioralStatusContainer: { backgroundColor: '#E6FFFA', borderRadius: 12, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#38B2AC' },
-  behavioralStatusText: { color: '#2C7A7B', fontSize: 14, textAlign: 'center', fontWeight: '600' },
-  textContainer: { backgroundColor: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, shadowColor: '#2D3748', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 4 },
-  textDisplay: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', width: '100%' },
-  textWrapper: { flexDirection: 'row', flexWrap: 'wrap', lineHeight: 32, fontSize: 20 },
-  defaultChar: { fontSize: 20, color: '#718096', lineHeight: 32, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-  correctChar: { fontSize: 20, color: '#48BB78', backgroundColor: '#F0FFF4', lineHeight: 32, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-  incorrectChar: { fontSize: 20, color: '#E53E3E', backgroundColor: '#FFF5F5', lineHeight: 32, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-  currentChar: { fontSize: 20, color: '#2D3748', backgroundColor: '#FEEBC8', lineHeight: 32, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', borderRadius: 4 },
-  inputContainer: { backgroundColor: '#fff', borderRadius: 16, marginBottom: 20, shadowColor: '#2D3748', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 4, borderWidth: 1, borderColor: '#E2E8F0' },
-  textInput: { fontSize: 18, padding: 20, minHeight: 120, textAlignVertical: 'top', color: '#2D3748', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-  controlsContainer: { alignItems: 'center', marginBottom: 24 },
-  startButton: { borderRadius: 16, overflow: 'hidden', width: '100%', maxWidth: 320, shadowColor: '#ED8936', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
-  resetButton: { backgroundColor: '#E2E8F0', paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12 },
-  resetButtonText: { color: '#2D3748', fontSize: 16, fontWeight: '600' },
-  buttonGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 18, paddingHorizontal: 32 },
-  buttonText: { color: '#fff', fontSize: 18, fontWeight: '700', marginLeft: 12, letterSpacing: 0.5 },
-  resultsContainer: { backgroundColor: '#fff', borderRadius: 16, padding: 24, shadowColor: '#2D3748', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 4 },
-  resultsTitle: { fontSize: 28, fontWeight: '800', color: '#2D3748', textAlign: 'center', marginBottom: 24, letterSpacing: 0.5 },
-  successMessage: { backgroundColor: '#F0FFF4', borderRadius: 12, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: '#48BB78' },
-  successText: { color: '#2F855A', fontSize: 15, textAlign: 'center', lineHeight: 22, letterSpacing: 0.3 },
-  resultGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 24 },
-  resultItem: { width: '48%', alignItems: 'center', marginBottom: 16, padding: 16, backgroundColor: '#F7FAFC', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' },
-  resultLabel: { fontSize: 14, color: '#718096', marginBottom: 6, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  resultValue: { fontSize: 24, fontWeight: '700', color: '#2D3748' },
-  actionButtons: { gap: 16, marginTop: 24, width: '100%' },
-  continueButton: { borderRadius: 16, overflow: 'hidden', shadowColor: '#3182CE', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
-  playAgainButton: { borderRadius: 16, overflow: 'hidden', shadowColor: '#ED8936', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
-  infoSection: { backgroundColor: '#F7FAFC', borderRadius: 12, padding: 20, marginTop: 24, borderWidth: 1, borderColor: '#E2E8F0' },
-  infoText: { color: '#718096', fontSize: 14, textAlign: 'center', lineHeight: 20, letterSpacing: 0.3 },
-  deviceInfoContainer: { backgroundColor: '#fff', borderRadius: 16, padding: 24, marginBottom: 20, shadowColor: '#2D3748', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 4 },
-  deviceInfoTitle: { fontSize: 18, fontWeight: '700', color: '#2D3748', marginBottom: 16, textAlign: 'center', letterSpacing: 0.5 },
-  deviceInfoGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  deviceInfoItem: { width: '48%', marginBottom: 16, padding: 12, backgroundColor: '#F7FAFC', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' },
-  deviceInfoLabel: { fontSize: 12, color: '#718096', marginBottom: 4, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-  deviceInfoValue: { fontSize: 14, fontWeight: '600', color: '#2D3748', letterSpacing: 0.3 },
-  debugSection: { backgroundColor: '#FFF8E1', borderRadius: 12, padding: 16, marginTop: 20, borderWidth: 1, borderColor: '#FFB74D' },
-  debugTitle: { fontSize: 14, fontWeight: '700', color: '#E65100', textAlign: 'center', marginBottom: 12 },
-  debugButtons: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  debugButton: { backgroundColor: '#FF9800', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginBottom: 8, width: '48%' },
-  debugButtonText: { color: '#fff', fontSize: 12, fontWeight: '600', textAlign: 'center' }
+  flex: { flex: 1 },
+  body: {
+    width: '100%',
+    maxWidth: 620,
+    alignSelf: 'center',
+    paddingBottom: 48,
+  },
+  metricsHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  metricGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 14,
+  },
+  metricCell: {
+    width: '33.33%',
+    gap: 2,
+  },
+  textWrapper: {
+    lineHeight: 30,
+    fontSize: 18,
+  },
+  defaultChar: {
+    lineHeight: 30,
+    fontSize: 18,
+  },
+  correctChar: {
+    lineHeight: 30,
+    fontSize: 18,
+  },
+  incorrectChar: {
+    lineHeight: 30,
+    fontSize: 18,
+  },
+  currentChar: {
+    lineHeight: 30,
+    fontSize: 18,
+    borderRadius: 3,
+  },
+  textInput: {
+    minHeight: 110,
+    textAlignVertical: 'top',
+    padding: 0,
+  },
+  deviceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  deviceLabel: {
+    flexShrink: 0,
+  },
+  deviceValue: {
+    flex: 1,
+    textAlign: 'right',
+  },
+  resultHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  resultGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 16,
+  },
+  resultCell: {
+    width: '50%',
+    gap: 2,
+  },
 });
